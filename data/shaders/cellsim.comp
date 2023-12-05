@@ -110,7 +110,7 @@ struct CellState {
 };
 
 struct CellRenderDataEx {
-    mat4 wvp;
+    mat4 modelViewMatrix;
     vec3 center;
     uint state;
 };
@@ -201,9 +201,9 @@ void main() {
 
   if (cellState != 0) {
     const uint idx = atomicAdd(draw_indirect.cmds[0].instance_count, 1) + 1;
-    rcells.data[idx].wvp =
+    rcells.data[idx].modelViewMatrix =
 #if defined(LIGHTING_ON)
-      viewMatrix *
+      viewTransform *
 #endif      
       BuildTranslation(ccs.data[cellIdx].center);
     

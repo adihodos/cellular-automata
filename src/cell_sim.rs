@@ -14,11 +14,25 @@ use self::mesh_geometry::{UNIT_CUBE_INDICES, UNIT_CUBE_WIRE_INDICES};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-struct CSUniformMat {
-    pv: glm::Mat4,
+struct VSUniformTransforms {
+    projection: glm::Mat4,
     cell_states: u32,
     cell_coloring: u32,
     world_size: u32,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C, align(16))]
+struct VSUniformLighting {
+    ambient_light: glm::Vec3,
+    directional_light: glm::Vec3,
+    directional_light_color: glm::Vec3,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+struct CSUniformTransforms {
+    view_matrix: glm::Mat4,
 }
 
 #[derive(Copy, Clone)]
@@ -163,7 +177,9 @@ mod mesh_geometry {
 #[allow(dead_code)]
 struct CellSimulationRenderState {
     ubo_transform: UniqueBuffer,
+    ubo_lighting: UniqueBuffer,
     ubo_rules: UniqueBuffer,
+    ubo_cs_transforms: UniqueBuffer,
     draw_indirect_buffer: UniqueBuffer,
     copy_draw_ind_buf: UniqueBuffer,
     instances_current: UniqueBuffer,
@@ -183,10 +199,18 @@ struct CellSimulationRenderState {
 
 impl CellSimulationRenderState {
     fn new(max_instances: usize) -> Result<CellSimulationRenderState> {
-        let ubo_transform = create_buffer(size_of::<CSUniformMat>(), Some(gl::MAP_WRITE_BIT))
-            .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create UBO"))?;
+        let ubo_transform =
+            create_buffer(size_of::<VSUniformTransforms>(), Some(gl::MAP_WRITE_BIT))
+                .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create UBO"))?;
+
+        let ubo_lighting =
+            create_buffer(size_of::<VSUniformLighting>(), Some(gl::MAP_WRITE_BIT))
+                .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create lights UBO"))?;
 
         let ubo_rules = create_buffer(size_of::<CSUniformEvalRule>(), Some(gl::MAP_WRITE_BIT))
+            .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create UBO"))?;
+
+        let ubo_cs_transforms = create_buffer(size_of::<glm::Mat4>(), Some(gl::MAP_WRITE_BIT))
             .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create UBO"))?;
 
         let draw_indirect_buffer = UniqueBuffer::new(unsafe {
@@ -276,9 +300,11 @@ impl CellSimulationRenderState {
         })
         .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create vertex array object"))?;
 
-        let vertexshader =
-            create_shader_program_from_file("data/shaders/instanced.vert", ShaderType::Vertex)
-                .map_err(|e| Error::new(ErrorKind::Other, e))?;
+        let vertexshader = ShaderProgramBuilder::new()
+            .add_file(&"data/shaders/instanced.vert")
+            .add_macros(&[("LIGHTING_ON", None)])
+            .compile(ShaderType::Vertex)
+            .map_err(|e| Error::new(ErrorKind::Other, e))?;
 
         let fragmentshader =
             create_shader_program_from_file("data/shaders/instanced.frag", ShaderType::Fragment)
@@ -296,6 +322,7 @@ impl CellSimulationRenderState {
 
         let compute_shader = ShaderProgramBuilder::new()
             .add_file(&"data/shaders/cellsim.comp")
+            .add_macros(&[("LIGHTING_ON", None)])
             .compile(ShaderType::Compute)
             .expect("Failed to create compute shader!");
 
@@ -358,7 +385,9 @@ impl CellSimulationRenderState {
 
         Ok(CellSimulationRenderState {
             ubo_rules,
+            ubo_lighting,
             ubo_transform,
+            ubo_cs_transforms,
             draw_indirect_buffer,
             instances_current,
             instances_previous,
@@ -618,6 +647,8 @@ pub struct CellSimulation {
     params: CellSimulationParams,
     time_elapsed: std::time::Duration,
     paused: bool,
+    lighting: VSUniformLighting,
+    view_matrix: glm::Mat4,
 }
 
 impl CellSimulation {
@@ -647,10 +678,18 @@ impl CellSimulation {
             },
             time_elapsed: std::time::Duration::from_millis(0),
             paused: true,
+            lighting: VSUniformLighting {
+                ambient_light: [0.1f32, 0.1f32, 0.1f32].into(),
+                directional_light: glm::normalize(&[1f32, 1f32, 1f32].into()),
+                directional_light_color: glm::make_vec3(&[1f32, 1f32, 1f32]),
+            },
+            view_matrix: glm::Mat4::identity(),
         }
     }
 
     pub fn update(&mut self, ctx: &FrameRenderContext) {
+        self.view_matrix = ctx.view_matrix;
+
         if self.paused {
             return;
         }
@@ -681,12 +720,24 @@ impl CellSimulation {
             gl::MAP_WRITE_BIT | gl::MAP_INVALIDATE_BUFFER_BIT,
         )
         .map(|mut ubo_tf| unsafe {
-            *(ubo_tf.as_mut_ptr::<CSUniformMat>()) = CSUniformMat {
-                pv: ctx.projection_view,
+            *(ubo_tf.as_mut_ptr::<VSUniformTransforms>()) = VSUniformTransforms {
+                projection: ctx.projection_matrix,
                 cell_states: self.eval_rules[self.params.rule].states,
                 cell_coloring: self.params.coloring_method as u32,
                 world_size: self.params.world_size,
             };
+        });
+
+        UniqueBufferMapping::new(
+            *self.render_state.ubo_lighting,
+            gl::MAP_WRITE_BIT | gl::MAP_INVALIDATE_BUFFER_BIT,
+        )
+        .map(|mut buf| unsafe {
+            std::ptr::copy_nonoverlapping(
+                &self.lighting as *const _,
+                buf.as_mut_ptr::<VSUniformLighting>(),
+                1,
+            );
         });
 
         unsafe {
@@ -695,7 +746,17 @@ impl CellSimulation {
             gl::Enable(gl::DEPTH_TEST);
             gl::Enable(gl::CULL_FACE);
 
-            gl::BindBufferBase(gl::UNIFORM_BUFFER, 0, *self.render_state.ubo_transform);
+            // gl::BindBufferBase(gl::UNIFORM_BUFFER, 0, *self.render_state.ubo_transform);
+            gl::BindBuffersBase(
+                gl::UNIFORM_BUFFER,
+                0,
+                2,
+                [
+                    *self.render_state.ubo_transform,
+                    *self.render_state.ubo_lighting,
+                ]
+                .as_ptr() as *const _,
+            );
 
             gl::BindBufferBase(
                 gl::SHADER_STORAGE_BUFFER,
@@ -785,6 +846,18 @@ impl CellSimulation {
                 }
 
                 *(ubo.as_mut_ptr::<CSUniformEvalRule>()) = x;
+            });
+
+            UniqueBufferMapping::new(
+                *self.render_state.ubo_cs_transforms,
+                gl::MAP_WRITE_BIT | gl::MAP_INVALIDATE_BUFFER_BIT,
+            )
+            .map(|mut ubo| unsafe {
+                std::ptr::copy_nonoverlapping(
+                    &self.view_matrix as *const _ as *const f32,
+                    ubo.as_mut_ptr::<f32>(),
+                    16,
+                )
             });
         }
 

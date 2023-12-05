@@ -1,13 +1,14 @@
 #version 460 core
 
 layout (location = 0) in vec3 vs_in_pos;
+layout (location = 1) in vec3 vs_in_normal;
 
 const uint COLOR_DISTANCE_TO_CENTER = 0;
 const uint COLOR_BY_COORDS = 1;
 const uint COLOR_BY_STATE = 2;
 
 layout (binding = 0) uniform VertexShaderParams {
-  mat4 projectionViewMatrix;
+  mat4 projectionMatrix;
   uint cellStates;
   uint coloring;
   uint worldSize;
@@ -15,14 +16,14 @@ layout (binding = 0) uniform VertexShaderParams {
 
 #if defined(LIGHTING_ON)
 layout (binding = 1) uniform LightingParams {
-    mat4 normalsMatrix;
-    vec3 directionalLights[4];
-    vec3 lightAmbient;
-  } lightingParams;
+  vec3 lightAmbient;
+  vec3 directionalLight;
+  vec3 directionalLightColor;
+} lightingParams;
 #endif
 
 struct CubeInstance {
-  mat4 wvp;
+  mat4 modelViewMatrix;
   vec3 center;
   uint state;
 };
@@ -42,7 +43,7 @@ layout (location = 1) out VS_OUT_FS_IN {
 } vs_out;
 
 void main() {
-  gl_Position = shaderParams.projectionViewMatrix * cells.instances[gl_BaseInstance + gl_InstanceID].wvp * vec4(vs_in_pos, 1.0);
+  vec4 position = shaderParams.projectionMatrix * cells.instances[gl_BaseInstance + gl_InstanceID].modelViewMatrix * vec4(vs_in_pos, 1.0);
 
   vec4 color;
   if (shaderParams.coloring == COLOR_BY_STATE) {
@@ -54,5 +55,13 @@ void main() {
     const vec3 cellCoords = cells.instances[gl_BaseInstance + gl_InstanceID].center;
     color = vec4(normalize(cellCoords), 1.0);
   }
+
+#if defined(LIGHTING_ON)
+  vec3 N = normalize(mat3(cells.instances[gl_BaseInstance + gl_InstanceID].modelViewMatrix) * vs_in_normal);
+  vec3 L = lightingParams.directionalLight;
+  color = vec4((lightingParams.lightAmbient + max(dot(N, L), 0.0) * lightingParams.directionalLightColor) * color.xyz, 1.0);
+#endif
+  
   vs_out.color = color;
+  gl_Position = position;
 }
