@@ -294,9 +294,10 @@ impl CellSimulationRenderState {
         })
         .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create graphics pipeline"))?;
 
-        let compute_shader =
-            create_shader_program_from_file("data/shaders/cellsim.comp", ShaderType::Compute)
-                .expect("Failed to create compute shader!");
+        let compute_shader = ShaderProgramBuilder::new()
+            .add_file(&"data/shaders/cellsim.comp")
+            .compile(ShaderType::Compute)
+            .expect("Failed to create compute shader!");
 
         use enterpolation::Generator;
         let color_palette = ConstEquidistantLinear::<f32, _, 3>::equidistant_unchecked([

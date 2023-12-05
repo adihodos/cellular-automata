@@ -2,7 +2,7 @@
 
 layout (location = 0) out vec4 FinalFragColor;
 
-in VS_OUT_FS_IN {
+layout (location = 1) in VS_OUT_FS_IN {
   vec4 color;
 } fs_in;
 

@@ -22,7 +22,7 @@ pub struct GlobalProgramOptions {
 
 pub static mut G_OPTIONS: GlobalProgramOptions = GlobalProgramOptions {
     debug_show_app_msg: false,
-    debug_show_glsys_msg: false,
+    debug_show_glsys_msg: true,
 };
 
 pub struct MainWindow {}

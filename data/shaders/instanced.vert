@@ -13,6 +13,14 @@ layout (binding = 0) uniform VertexShaderParams {
   uint worldSize;
 } shaderParams;
 
+#if defined(LIGHTING_ON)
+layout (binding = 1) uniform LightingParams {
+    mat4 normalsMatrix;
+    vec3 directionalLights[4];
+    vec3 lightAmbient;
+  } lightingParams;
+#endif
+
 struct CubeInstance {
   mat4 wvp;
   vec3 center;
@@ -25,11 +33,11 @@ layout (binding = 0, std430) readonly buffer InstancesData {
 
 layout (binding = 0) uniform sampler1DArray GradientTextures;
 
-out gl_PerVertex {
+layout (location = 0) out gl_PerVertex {
   vec4 gl_Position;
 };
 
-out VS_OUT_FS_IN {
+layout (location = 1) out VS_OUT_FS_IN {
   vec4 color;
 } vs_out;
 
