@@ -4,6 +4,7 @@ use crate::gl;
 use crate::gl::types::{GLbitfield, GLsizei, GLsizeiptr, GLuint};
 use std::ffi::CString;
 
+use std::io::{Error, ErrorKind};
 use std::path::Path;
 use std::result::Result;
 
@@ -293,14 +294,12 @@ pub enum ShaderType {
 pub fn create_shader_program_from_file<P: AsRef<std::path::Path>>(
     file_path: P,
     program_type: ShaderType,
-) -> Result<UniqueShaderProgram, OpenGLError> {
-    let mut file = std::fs::File::open(file_path)
-        .map_err(|e| OpenGLError::GenericError(format!("Shader file error: {e}"), 0))?;
+) -> std::io::Result<UniqueShaderProgram> {
+    let mut file = std::fs::File::open(file_path)?;
+
     let mut s = String::new();
     use std::io::Read;
-    file.read_to_string(&mut s)
-        .map_err(|e| e.to_string())
-        .map_err(|e| OpenGLError::GenericError(format!("Read error {e}"), 0))?;
+    file.read_to_string(&mut s)?;
 
     create_shader_program_from_string(&s, program_type)
 }
@@ -308,11 +307,9 @@ pub fn create_shader_program_from_file<P: AsRef<std::path::Path>>(
 pub fn create_shader_program_from_string(
     s: &str,
     prog_type: ShaderType,
-) -> Result<UniqueShaderProgram, OpenGLError> {
-    let src_code = std::ffi::CString::new(s)
-        .map_err(|e| OpenGLError::ShaderSourceCodeInvalid(e.to_string()))?;
+) -> std::io::Result<UniqueShaderProgram> {
+    let src_code = std::ffi::CString::new(s).map_err(|e| Error::new(ErrorKind::Other, e))?;
 
-    let x = [src_code.as_ptr()];
     let prog_type = match prog_type {
         ShaderType::Vertex => gl::VERTEX_SHADER,
         ShaderType::Fragment => gl::FRAGMENT_SHADER,
@@ -320,54 +317,18 @@ pub fn create_shader_program_from_string(
         ShaderType::Compute => gl::COMPUTE_SHADER,
     };
 
-    let prg =
-        UniqueShaderProgram::new(unsafe { gl::CreateShaderProgramv(prog_type, 1, x.as_ptr()) })
-            .ok_or_else(|| OpenGLError::ResourceCreateError(unsafe { gl::GetError() }))?;
+    let prg = UniqueShaderProgram::new(unsafe {
+        gl::CreateShaderProgramv(prog_type, 1, [src_code.as_ptr()].as_ptr())
+    })
+    .ok_or_else(|| {
+        Error::new(
+            ErrorKind::Other,
+            OpenGLError::current_error("Failed to create shader program"),
+        )
+    })?;
 
-    let linked_successfully = (|| {
-        let mut link_status = 0i32;
-        unsafe {
-            gl::GetProgramiv(*prg, gl::LINK_STATUS, &mut link_status);
-        }
-        link_status == gl::TRUE as i32
-    })();
-
-    if linked_successfully {
-        return Ok(prg);
-    }
-
-    let mut info_log_buff: Vec<u8> = vec![0; 1024];
-    let mut info_log_size = 0i32;
-    unsafe {
-        gl::GetProgramInfoLog(
-            *prg,
-            info_log_buff.len() as gl::types::GLsizei,
-            &mut info_log_size,
-            info_log_buff.as_mut_ptr() as *mut i8,
-        );
-    }
-
-    if info_log_size > 0 {
-        info_log_buff[info_log_size as usize] = 0;
-        use std::ffi::CStr;
-
-        let err_msg = unsafe { CStr::from_ptr(info_log_buff.as_ptr() as *const i8) };
-        let err_str = err_msg
-            .to_str()
-            .map(|e| {
-                e.chars()
-                    .filter(|c| *c != '\"' /* && *c != '\n' */)
-                    .collect::<String>()
-            })
-            .unwrap_or_else(|_| "Cant display shader compile error".into());
-
-        return Err(OpenGLError::ShaderCompilationError(err_str));
-    }
-
-    Err(OpenGLError::GenericError(
-        "Cant get compile error log".into(),
-        unsafe { gl::GetError() },
-    ))
+    ShaderProgramBuilder::check_program_status(*prg)?;
+    Ok(prg)
 }
 
 /// Stores a snapshot of the OpenGL state machine at some point in time.
@@ -586,12 +547,18 @@ enum ShaderStringSource {
 }
 
 pub struct ShaderProgramBuilder<'a> {
+    macros: Vec<(&'a str, Option<&'a str>)>,
     blocks: Vec<ShaderBuildingBlock<'a>>,
+    entry_point: Option<&'a str>,
 }
 
 impl<'a> ShaderProgramBuilder<'a> {
     pub fn new() -> Self {
-        Self { blocks: vec![] }
+        Self {
+            blocks: vec![],
+            macros: vec![],
+            entry_point: None,
+        }
     }
 
     pub fn add_string<S: AsRef<str>>(&mut self, s: &'a S) -> &mut Self {
@@ -604,77 +571,63 @@ impl<'a> ShaderProgramBuilder<'a> {
         self
     }
 
-    pub fn build(&self, shader_type: ShaderType) -> Result<UniqueShaderProgram, String> {
-        let string_sources = self
-            .blocks
-            .iter()
-            .filter_map(|block| match block {
+    pub fn add_macros(&mut self, macros: &[(&'a str, Option<&'a str>)]) -> &mut Self {
+        self.macros.extend(macros.iter());
+        self
+    }
+
+    pub fn set_entry_point(&mut self, ep: &'a str) -> &mut Self {
+        self.entry_point = Some(ep);
+        self
+    }
+
+    pub fn compile(&self, shader_type: ShaderType) -> std::io::Result<UniqueShaderProgram> {
+        let mut sb = rustring_builder::StringBuilder::new();
+        for block in self.blocks.iter() {
+            match block {
                 ShaderBuildingBlock::StringCode(s) => {
-                    if let Some(txt_code) = CString::new(s.as_ref()).ok() {
-                        Some(ShaderStringSource::FfiString(txt_code))
-                    } else {
-                        None
-                    }
+                    sb.append(s.as_ref());
+                    sb.push(' ');
                 }
 
-                ShaderBuildingBlock::File(path) => std::fs::File::open(path)
-                    .ok()
-                    .and_then(|mut f| {
-                        use std::io::Read;
-                        let mut bytes = Vec::<u8>::new();
-                        f.read_to_end(&mut bytes).ok().map(|_| bytes)
-                    })
-                    .and_then(|bytes| CString::from_vec_with_nul(bytes).ok())
-                    .map(|s| ShaderStringSource::FfiString(s)),
-            })
-            .collect::<Vec<_>>();
-
-        if string_sources.len() != self.blocks.len() {
-            return Err("Failed to load some shader files!".to_string());
+                ShaderBuildingBlock::File(fp) => {
+                    let mut f = std::fs::File::open(fp)?;
+                    use std::io::Read;
+                    let mut s = String::new();
+                    f.read_to_string(&mut s)?;
+                    sb.append(s);
+                }
+            }
         }
 
-        let c_strings_ptrs = string_sources
-            .iter()
-            .map(|src| match src {
-                ShaderStringSource::FfiString(ref ffi_str) => ffi_str.as_ptr(),
-            })
-            .collect::<Vec<_>>();
+        Self::compile_shaderc(
+            &sb.to_string(),
+            "",
+            shader_type,
+            &self.macros,
+            self.entry_point,
+        )
+        .map_err(|gl_err| Error::new(ErrorKind::Other, gl_err))
+    }
 
-        use gl::types::*;
-
-        let shader_program = UniqueShaderProgram::new(unsafe {
-            let gl_shader_type = match shader_type {
-                ShaderType::Vertex => gl::VERTEX_SHADER,
-                ShaderType::Geometry => gl::GEOMETRY_SHADER,
-                ShaderType::Fragment => gl::FRAGMENT_SHADER,
-                ShaderType::Compute => gl::COMPUTE_SHADER,
-            };
-
-            gl::CreateShaderProgramv(
-                gl_shader_type,
-                c_strings_ptrs.len() as GLsizei,
-                c_strings_ptrs.as_ptr(),
-            )
-        })
-        .ok_or_else(|| "Failed to create shader!".to_string())?;
-
+    fn check_program_status(prg: GLuint) -> std::io::Result<()> {
         let linked_successfully = (|| {
             let mut link_status = 0i32;
             unsafe {
-                gl::GetProgramiv(*shader_program, gl::LINK_STATUS, &mut link_status);
+                gl::GetProgramiv(prg, gl::LINK_STATUS, &mut link_status);
             }
             link_status == gl::TRUE as i32
         })();
 
         if linked_successfully {
-            return Ok(shader_program);
+            return Ok(());
         }
 
         let mut info_log_buff: Vec<u8> = vec![0; 1024];
         let mut info_log_size = 0i32;
         unsafe {
             gl::GetProgramInfoLog(
-                *shader_program,
+                prg,
                 info_log_buff.len() as gl::types::GLsizei,
                 &mut info_log_size,
                 info_log_buff.as_mut_ptr() as *mut i8,
@@ -687,13 +640,86 @@ impl<'a> ShaderProgramBuilder<'a> {
             use std::ffi::CStr;
             let err_desc = unsafe { CStr::from_ptr(info_log_buff.as_ptr() as *const i8) };
 
-            return Err(err_desc
-                .to_str()
-                .unwrap_or_else(|_| "unknown shader compiler error")
-                .to_string());
+            return Err(Error::new(
+                ErrorKind::Other,
+                OpenGLError::ShaderCompilationError(
+                    err_desc
+                        .to_str()
+                        .unwrap_or_else(|_| "unknown shader compiler error")
+                        .to_string(),
+                ),
+            ));
         }
 
-        Err("Error but no compile log is available".to_string())
+        Err(Error::new(
+            ErrorKind::Other,
+            OpenGLError::current_error("Error but no compile log is available"),
+        ))
+    }
+
+    fn compile_shaderc(
+        source_code: &str,
+        source_id: &str,
+        shader_type: ShaderType,
+        macros: &[(&str, Option<&str>)],
+        entry_point: Option<&str>,
+    ) -> std::io::Result<UniqueShaderProgram> {
+        let compiler = shaderc::Compiler::new().ok_or_else(|| {
+            Error::new(ErrorKind::Other, "Failed to instantiate shaderc compiler")
+        })?;
+
+        let mut compile_options = shaderc::CompileOptions::new().ok_or_else(|| {
+            Error::new(
+                ErrorKind::Other,
+                "Failed to instantiate shaderc compiler options",
+            )
+        })?;
+
+        compile_options.set_source_language(shaderc::SourceLanguage::GLSL);
+        compile_options.set_target_env(
+            shaderc::TargetEnv::OpenGL,
+            shaderc::EnvVersion::OpenGL4_5 as u32,
+        );
+
+        macros.iter().for_each(|(macro_name, macro_val)| {
+            compile_options.add_macro_definition(macro_name, *macro_val);
+        });
+
+        let preprocessed_source = compiler
+            .preprocess(
+                source_code,
+                source_id,
+                entry_point.unwrap_or("main"),
+                Some(&compile_options),
+            )
+            .map_err(|e| {
+                Error::new(
+                    ErrorKind::Other,
+                    OpenGLError::ShaderCompilationError(e.to_string()),
+                )
+            })?;
+
+        let pp_src_c_str = CString::new(preprocessed_source.as_text())
+            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+
+        let shader_program = UniqueShaderProgram::new(unsafe {
+            let gl_shader_type = match shader_type {
+                ShaderType::Vertex => gl::VERTEX_SHADER,
+                ShaderType::Geometry => gl::GEOMETRY_SHADER,
+                ShaderType::Fragment => gl::FRAGMENT_SHADER,
+                ShaderType::Compute => gl::COMPUTE_SHADER,
+            };
+            gl::CreateShaderProgramv(gl_shader_type, 1, [pp_src_c_str.as_ptr()].as_ptr())
+        })
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::Other,
+                OpenGLError::current_error("Failed to create shader program!"),
+            )
+        })?;
+
+        let _ = Self::check_program_status(*shader_program)?;
+        Ok(shader_program)
     }
 }
 

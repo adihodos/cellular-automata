@@ -14,11 +14,22 @@ use self::mesh_geometry::{UNIT_CUBE_INDICES, UNIT_CUBE_WIRE_INDICES};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-struct CSUniformMat {
-    pv: glm::Mat4,
+struct VSUniformTransforms {
+    projection: glm::Mat4,
+    view: glm::Mat4,
     cell_states: u32,
     cell_coloring: u32,
     world_size: u32,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+struct VSUniformLighting {
+    ambient_light: glm::Vec3,
+    pad0: u32,
+    directional_light: glm::Vec3,
+    pad1: u32,
+    directional_light_color: glm::Vec3,
 }
 
 #[derive(Copy, Clone)]
@@ -63,31 +74,37 @@ mod mesh_geometry {
     pub const HALF_HEIGHT: f32 = 0.5f32;
     pub const HALF_DEPTH: f32 = 0.5f32;
 
-    pub const UNIT_CUBE_VERTICES: [[f32; 3]; 24] = [
-        [-HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH],
-        [-HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH],
-        [HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH],
-        [HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH],
-        [-HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH],
-        [HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH],
-        [HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH],
-        [-HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH],
-        [-HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH],
-        [-HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH],
-        [HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH],
-        [HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH],
-        [-HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH],
-        [HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH],
-        [HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH],
-        [-HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH],
-        [-HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH],
-        [-HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH],
-        [-HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH],
-        [-HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH],
-        [HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH],
-        [HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH],
-        [HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH],
-        [HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH],
+    #[derive(Copy, Clone)]
+    pub struct VertexPN {
+	pub p: [f32; 3],
+	pub n: [f32; 3]
+    }
+
+    pub const UNIT_CUBE_VERTICES: [VertexPN; 24] = [
+	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n: [0f32, 0f32, -1f32] },
+	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n:[0f32, 0f32, -1f32] },
+	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n:[0f32, 0f32, -1f32] },
+	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n:[0f32, 0f32, -1f32] },
+	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n: [0f32, 0f32, 1f32] },
+	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n:[0f32, 0f32, 1f32] },
+	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[0f32, 0f32, 1f32] },
+	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[0f32, 0f32, 1f32] },
+	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n: [0f32, 1f32, 0f32] },
+	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[0f32, 1f32, 0f32] },
+	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[0f32, 1f32, 0f32] },
+	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n:[0f32, 1f32, 0f32] },
+	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n: [0f32, -1f32, 0f32] },
+	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n:[0f32, -1f32, 0f32] },
+	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n:[0f32, -1f32, 0f32] },
+	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n:[0f32, -1f32, 0f32] },
+	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n: [-1f32, 0f32, 0f32] },
+	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[-1f32, 0f32, 0f32] },
+	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n:[-1f32, 0f32, 0f32] },
+	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n:[-1f32, 0f32, 0f32] },
+	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n: [1f32, 0f32, 0f32] },
+	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n:[1f32, 0f32, 0f32] },
+	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[1f32, 0f32, 0f32] },
+	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n:[1f32, 0f32, 0f32] },
     ];
 
     pub const UNIT_CUBE_INDICES: [u32; 36] = [
@@ -163,6 +180,7 @@ mod mesh_geometry {
 #[allow(dead_code)]
 struct CellSimulationRenderState {
     ubo_transform: UniqueBuffer,
+    ubo_lighting: UniqueBuffer,
     ubo_rules: UniqueBuffer,
     draw_indirect_buffer: UniqueBuffer,
     copy_draw_ind_buf: UniqueBuffer,
@@ -183,8 +201,13 @@ struct CellSimulationRenderState {
 
 impl CellSimulationRenderState {
     fn new(max_instances: usize) -> Result<CellSimulationRenderState> {
-        let ubo_transform = create_buffer(size_of::<CSUniformMat>(), Some(gl::MAP_WRITE_BIT))
-            .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create UBO"))?;
+        let ubo_transform =
+            create_buffer(size_of::<VSUniformTransforms>(), Some(gl::MAP_WRITE_BIT))
+                .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create UBO"))?;
+
+        let ubo_lighting =
+            create_buffer(size_of::<VSUniformLighting>(), Some(gl::MAP_WRITE_BIT))
+                .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create lights UBO"))?;
 
         let ubo_rules = create_buffer(size_of::<CSUniformEvalRule>(), Some(gl::MAP_WRITE_BIT))
             .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create UBO"))?;
@@ -269,16 +292,27 @@ impl CellSimulationRenderState {
             gl::VertexArrayAttribBinding(vao, 0, 0);
             gl::EnableVertexArrayAttrib(vao, 0);
 
-            gl::VertexArrayVertexBuffer(vao, 0, *vertexbuffer, 0, size_of::<glm::Vec3>() as i32);
+            gl::VertexArrayAttribFormat(vao, 1, 3, gl::FLOAT, gl::FALSE, 12);
+            gl::VertexArrayAttribBinding(vao, 1, 0);
+            gl::EnableVertexArrayAttrib(vao, 1);
+
+            gl::VertexArrayVertexBuffer(
+                vao,
+                0,
+                *vertexbuffer,
+                0,
+                size_of::<mesh_geometry::VertexPN>() as i32,
+            );
             gl::VertexArrayElementBuffer(vao, *indexbuffer);
 
             vao
         })
         .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create vertex array object"))?;
 
-        let vertexshader =
-            create_shader_program_from_file("data/shaders/instanced.vert", ShaderType::Vertex)
-                .map_err(|e| Error::new(ErrorKind::Other, e))?;
+        let vertexshader = ShaderProgramBuilder::new()
+            .add_file(&"data/shaders/instanced.vert")
+            .add_macros(&[("LIGHTING_ON", None)])
+            .compile(ShaderType::Vertex)?;
 
         let fragmentshader =
             create_shader_program_from_file("data/shaders/instanced.frag", ShaderType::Fragment)
@@ -294,9 +328,10 @@ impl CellSimulationRenderState {
         })
         .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create graphics pipeline"))?;
 
-        let compute_shader =
-            create_shader_program_from_file("data/shaders/cellsim.comp", ShaderType::Compute)
-                .expect("Failed to create compute shader!");
+        let compute_shader = ShaderProgramBuilder::new()
+            .add_file(&"data/shaders/cellsim.comp")
+            .add_macros(&[("LIGHTING_ON", None)])
+            .compile(ShaderType::Compute)?;
 
         use enterpolation::Generator;
         let color_palette = ConstEquidistantLinear::<f32, _, 3>::equidistant_unchecked([
@@ -357,6 +392,7 @@ impl CellSimulationRenderState {
 
         Ok(CellSimulationRenderState {
             ubo_rules,
+            ubo_lighting,
             ubo_transform,
             draw_indirect_buffer,
             instances_current,
@@ -384,7 +420,7 @@ impl CellSimulationRenderState {
             let _ = OpenGLDebugScopePush::new(0x1, "[[Resizing buffers]]");
 
             log::info!(
-                "Resising buffers {} -> {}",
+                "Resizing buffers {} -> {}",
                 self.gpu_buf_capacity,
                 size_of_val(cells)
             );
@@ -483,7 +519,7 @@ impl CellRule {
             sb.append(x);
         });
 
-        // sb.insert_at(sb.len() as i32, ",]");
+
         sb.push(']');
 
         sb.append_line("\u{f0877} Neighbours to be born: [");
@@ -550,7 +586,6 @@ impl CellRuleBuilder {
     }
 
     fn set_states(mut self, states: u32) -> Self {
-        // assert!(states > 1, "A cell has at least 2 states");
         self.r.states = states;
         self
     }
@@ -617,6 +652,7 @@ pub struct CellSimulation {
     params: CellSimulationParams,
     time_elapsed: std::time::Duration,
     paused: bool,
+    lighting: VSUniformLighting,
 }
 
 impl CellSimulation {
@@ -646,6 +682,13 @@ impl CellSimulation {
             },
             time_elapsed: std::time::Duration::from_millis(0),
             paused: true,
+            lighting: VSUniformLighting {
+                ambient_light: [0.1f32, 0.1f32, 0.1f32].into(),
+                pad0: 0,
+                directional_light: glm::normalize(&[1f32, 1f32, 1f32].into()),
+                pad1: 0,
+                directional_light_color: glm::make_vec3(&[1f32, 1f32, 1f32]),
+            },
         }
     }
 
@@ -680,12 +723,25 @@ impl CellSimulation {
             gl::MAP_WRITE_BIT | gl::MAP_INVALIDATE_BUFFER_BIT,
         )
         .map(|mut ubo_tf| unsafe {
-            *(ubo_tf.as_mut_ptr::<CSUniformMat>()) = CSUniformMat {
-                pv: ctx.projection_view,
+            *(ubo_tf.as_mut_ptr::<VSUniformTransforms>()) = VSUniformTransforms {
+                projection: ctx.projection_view,
+                view: ctx.view_matrix,
                 cell_states: self.eval_rules[self.params.rule].states,
                 cell_coloring: self.params.coloring_method as u32,
                 world_size: self.params.world_size,
             };
+        });
+
+        UniqueBufferMapping::new(
+            *self.render_state.ubo_lighting,
+            gl::MAP_WRITE_BIT | gl::MAP_INVALIDATE_BUFFER_BIT,
+        )
+        .map(|mut buf| unsafe {
+            std::ptr::copy_nonoverlapping(
+                &self.lighting as *const _,
+                buf.as_mut_ptr::<VSUniformLighting>(),
+                1,
+            );
         });
 
         unsafe {
@@ -694,7 +750,16 @@ impl CellSimulation {
             gl::Enable(gl::DEPTH_TEST);
             gl::Enable(gl::CULL_FACE);
 
-            gl::BindBufferBase(gl::UNIFORM_BUFFER, 0, *self.render_state.ubo_transform);
+            gl::BindBuffersBase(
+                gl::UNIFORM_BUFFER,
+                0,
+                2,
+                [
+                    *self.render_state.ubo_transform,
+                    *self.render_state.ubo_lighting,
+                ]
+                .as_ptr() as *const _,
+            );
 
             gl::BindBufferBase(
                 gl::SHADER_STORAGE_BUFFER,
@@ -706,13 +771,7 @@ impl CellSimulation {
                 *self.render_state.draw_indirect_buffer,
             );
             gl::BindVertexArray(*self.render_state.vertexarray);
-            gl::BindVertexBuffers(
-                0,
-                1,
-                [*self.render_state.vertexbuffer].as_ptr(),
-                [0].as_ptr(),
-                [std::mem::size_of::<glm::Vec3>() as GLsizei].as_ptr(),
-            );
+
             gl::BindProgramPipeline(*self.render_state.pipeline);
             gl::BindTextureUnit(0, *self.render_state.gradient_tex);
             gl::BindSampler(0, *self.render_state.sampler);
@@ -803,7 +862,6 @@ impl CellSimulation {
                 });
         }
 
-        // use std::mem::size_of;
         unsafe {
             let _ = OpenGLDebugScopePush::new(0x1, "[[Running CS cell simulation]]");
             gl::BindBuffersBase(
