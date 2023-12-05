@@ -15,7 +15,6 @@ layout (binding = 1) uniform CellEvalRule {
 
 const uint EVAL_NEIGHBOR_MOORE = 0;
 const uint EVAL_NEIGHBOR_VN = 1;
-// const uint TILES = 64;
 
 const ivec3 MOORE_NEIGHBOURS[] = ivec3[32](
   ivec3(-1, -1, -1),
@@ -105,7 +104,7 @@ struct CellState {
 };
 
 struct CellRenderDataEx {
-    mat4 wvp;
+    mat4 modelViewMatrix;
     vec3 center;
     uint state;
 };
@@ -192,27 +191,11 @@ void main() {
     }
   }
 
-  // if (cellState == 0) {
-  //   if (canCellComeToLife(cellLiveNeighbours)) {
-  //     cellState = 1;
-  //   }
-  // } else if (cellState == 1) {
-  //   if (!canCellSurvive(cellLiveNeighbours)) {
-  //     cellState += 1;
-  //   }
-  // } else {
-  //   if (cellState == evalRule.states - 1) {
-  //     cellState = 0;
-  //   } else {
-  //     cellState += 1;
-  //   }
-  // }
-
   cns.data[cellIdx].state = cellState;
 
   if (cellState != 0) {
     const uint idx = atomicAdd(draw_indirect.cmds[0].instance_count, 1) + 1;
-    rcells.data[idx].wvp = BuildTranslation(ccs.data[cellIdx].center);
+    rcells.data[idx].modelViewMatrix = BuildTranslation(ccs.data[cellIdx].center);
     rcells.data[idx].center = ccs.data[cellIdx].center;
     rcells.data[idx].state = cellState;
   }

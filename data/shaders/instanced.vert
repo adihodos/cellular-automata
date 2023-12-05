@@ -1,6 +1,7 @@
 #version 460 core
 
 layout (location = 0) in vec3 vs_in_pos;
+layout (location = 1) in vec3 vs_in_normal;
 
 const uint COLOR_DISTANCE_TO_CENTER = 0;
 const uint COLOR_BY_COORDS = 1;
@@ -8,13 +9,22 @@ const uint COLOR_BY_STATE = 2;
 
 layout (binding = 0) uniform VertexShaderParams {
   mat4 projectionViewMatrix;
+  mat4 viewMatrix;
   uint cellStates;
   uint coloring;
   uint worldSize;
 } shaderParams;
 
+#if defined(LIGHTING_ON)
+layout (binding = 1) uniform LightingParams {
+  vec3 lightAmbient;
+  vec3 directionalLight;
+  vec3 directionalLightColor;
+} lightingParams;
+#endif
+
 struct CubeInstance {
-  mat4 wvp;
+  mat4 modelMatrix;
   vec3 center;
   uint state;
 };
@@ -25,16 +35,16 @@ layout (binding = 0, std430) readonly buffer InstancesData {
 
 layout (binding = 0) uniform sampler1DArray GradientTextures;
 
-out gl_PerVertex {
+layout (location = 0) out gl_PerVertex {
   vec4 gl_Position;
 };
 
-out VS_OUT_FS_IN {
+layout (location = 1) out VS_OUT_FS_IN {
   vec4 color;
 } vs_out;
 
 void main() {
-  gl_Position = shaderParams.projectionViewMatrix * cells.instances[gl_BaseInstance + gl_InstanceID].wvp * vec4(vs_in_pos, 1.0);
+  vec4 position = shaderParams.projectionViewMatrix * cells.instances[gl_BaseInstance + gl_InstanceID].modelMatrix * vec4(vs_in_pos, 1.0);
 
   vec4 color;
   if (shaderParams.coloring == COLOR_BY_STATE) {
@@ -46,5 +56,14 @@ void main() {
     const vec3 cellCoords = cells.instances[gl_BaseInstance + gl_InstanceID].center;
     color = vec4(normalize(cellCoords), 1.0);
   }
+
+#if defined(LIGHTING_ON)
+  // model matrix is just a translation so we can ignore it
+  vec3 N = normalize(mat3(shaderParams.viewMatrix) * vs_in_normal);
+  vec3 L = lightingParams.directionalLight;
+  color = vec4((lightingParams.lightAmbient + max(dot(N, L), 0.0) * lightingParams.directionalLightColor) * color.xyz, 1.0);
+#endif
+  
   vs_out.color = color;
+  gl_Position = position;
 }
