@@ -84,8 +84,8 @@ impl MainWindow {
 
         let (mut window, event_pump) = glfw
             .create_window(
-                (work_area.2 - work_area.0).abs() as u32,
-                (work_area.3 - work_area.1).abs() as u32,
+                work_area.2 as u32,
+                work_area.3 as u32,
                 "Cellular automata simulation",
                 glfw::WindowMode::Windowed,
             )
