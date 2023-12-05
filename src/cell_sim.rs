@@ -10,6 +10,8 @@ use std::ops::RangeInclusive;
 use enterpolation::linear::ConstEquidistantLinear;
 use palette::LinSrgb;
 
+use self::mesh_geometry::{UNIT_CUBE_INDICES, UNIT_CUBE_WIRE_INDICES};
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 struct CSUniformMat {
@@ -596,6 +598,7 @@ struct CellSimulationParams {
     coloring_method: ColoringMethod,
     live_cells: u32,
     world_size: u32,
+    draw_world_box: bool,
 }
 
 impl CellSimulationParams {
@@ -639,6 +642,7 @@ impl CellSimulation {
                 coloring_method: ColoringMethod::CenterToRGB,
                 live_cells: 0,
                 world_size: CellSimulationParams::WORLD_INITIAL_SIZE,
+                draw_world_box: true,
             },
             time_elapsed: std::time::Duration::from_millis(0),
             paused: true,
@@ -714,19 +718,21 @@ impl CellSimulation {
             gl::BindSampler(0, *self.render_state.sampler);
             gl::DrawElementsIndirect(gl::TRIANGLES, gl::UNSIGNED_INT, std::ptr::null());
 
-            //
-            // draw world box as wireframe
-            gl::Disable(gl::CULL_FACE);
-            gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
-            gl::DrawElementsInstancedBaseInstance(
-                gl::TRIANGLES,
-                36,
-                gl::UNSIGNED_INT,
-                std::ptr::null(),
-                1,
-                0,
-            );
-            gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL);
+            if self.params.draw_world_box {
+                //
+                // draw world box as wireframe
+                gl::Disable(gl::CULL_FACE);
+                gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
+
+                gl::DrawElements(
+                    gl::LINES,
+                    UNIT_CUBE_WIRE_INDICES.len() as _,
+                    gl::UNSIGNED_INT,
+                    std::ptr::null::<u32>().offset(UNIT_CUBE_INDICES.len() as isize) as *const _,
+                );
+
+                gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL);
+            }
         }
 
         unsafe {
@@ -848,7 +854,7 @@ impl CellSimulation {
 
                 ui.text_colored(color, text);
                 ui.same_line();
-                if ui.button("\u{f0e62} Restart with random seed (G)") {
+                if ui.button("\u{f0e62} Restart with random seed (g)") {
                     self.reset_grid();
                 }
                 ui.separator();
@@ -907,6 +913,8 @@ impl CellSimulation {
                         }
                     });
                 }
+
+                ui.checkbox("\u{f01a7} Draw world box", &mut self.params.draw_world_box);
 
                 ui.separator();
                 ui.text(format!("\u{f0ed5} Live cells: {}", self.params.live_cells));
