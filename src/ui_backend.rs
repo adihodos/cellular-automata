@@ -420,19 +420,26 @@ impl UiBackend {
                 .insert(imgui::BackendFlags::HAS_SET_MOUSE_POS);
         }
 
-        context.set_platform_name(Some("Cell automaton app".into()));
+        context.set_platform_name(Some("Cellular automata".into()));
 
         let render_state = {
             let font_atlas = context.fonts();
-            if let Ok(font) = load_compressed_font("data/fonts/iosevka-nfm.ttf") {
-                use imgui::{FontConfig, FontSource};
+            if let Ok(font) = load_compressed_font("data/fonts/iosevka-nerd-font-medium.ttf") {
+                use imgui::{FontConfig, FontGlyphRanges, FontSource};
+
                 font_atlas.add_font(&[FontSource::TtfData {
                     data: &font,
-                    size_pixels: 18.0,
+                    size_pixels: 24.0,
                     config: Some(FontConfig {
                         oversample_h: 4,
                         oversample_v: 4,
-                        rasterizer_multiply: 1.5f32,
+                        // rasterizer_multiply: 1.5f32,
+                        pixel_snap_h: true,
+
+                        glyph_ranges: FontGlyphRanges::from_slice(&[
+                            0x1, 0x24F, 0xe200, 0xe2a0, 0xf000, 0xf2e0, 0xf0001, 0xf1af0, 0xe700,
+                            0xe7c5, 0,
+                        ]),
                         ..FontConfig::default()
                     }),
                 }]);

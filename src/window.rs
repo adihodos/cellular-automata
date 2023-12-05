@@ -45,6 +45,29 @@ impl MainWindow {
         })
         .expect("Failed to initialize GLFW");
 
+        let (content_scale, phys_size, pos, work_area, name) = glfw
+            .with_primary_monitor(|_, pmon| {
+                pmon.map(|m| {
+                    (
+                        m.get_content_scale(),
+                        m.get_physical_size(),
+                        m.get_pos(),
+                        m.get_workarea(),
+                        m.get_name(),
+                    )
+                })
+            })
+            .expect("Failed to query primary monitor!");
+
+        log::info!(
+            "Primary monitor: {}, physical size {:?}, position {:?}, work area {:?}, content scale {:?}",
+            name.unwrap_or_else(|| "unknown".to_string()),
+            phys_size,
+            pos,
+            work_area,
+            content_scale
+        );
+
         use glfw::WindowHint;
         glfw.window_hint(WindowHint::ClientApi(glfw::ClientApiHint::OpenGl));
         glfw.window_hint(WindowHint::ContextCreationApi(
@@ -57,11 +80,12 @@ impl MainWindow {
         glfw.window_hint(WindowHint::DoubleBuffer(true));
         glfw.window_hint(WindowHint::DepthBits(Some(24)));
         glfw.window_hint(WindowHint::StencilBits(Some(8)));
+        glfw.window_hint(WindowHint::Decorated(false));
 
         let (mut window, event_pump) = glfw
             .create_window(
-                1024,
-                1024,
+                (work_area.2 - work_area.0).abs() as u32,
+                (work_area.3 - work_area.1).abs() as u32,
                 "Cellular automata simulation",
                 glfw::WindowMode::Windowed,
             )

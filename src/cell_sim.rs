@@ -473,7 +473,7 @@ impl CellRule {
     fn detailed_description(&self) -> String {
         use rustring_builder::StringBuilder;
         let mut sb = StringBuilder::new();
-        sb.append_line("Neighbours to survive: [");
+        sb.append_line("\u{f0877} Neighbours to survive: [");
         self.survival.iter().enumerate().for_each(|(i, x)| {
             if i > 0 {
                 sb.push(',');
@@ -484,7 +484,7 @@ impl CellRule {
         // sb.insert_at(sb.len() as i32, ",]");
         sb.push(']');
 
-        sb.append_line("Neighbours to be born: [");
+        sb.append_line("\u{f0877} Neighbours to be born: [");
         self.birth.iter().enumerate().for_each(|(i, x)| {
             if i > 0 {
                 sb.push(',');
@@ -492,9 +492,9 @@ impl CellRule {
             sb.append(x);
         });
         sb.push(']');
-        sb.append_line("States: ");
+        sb.append_line("\u{f11ef} States: ");
         sb.append(self.states);
-        sb.append_line("Neighbour evaluation method: ");
+        sb.append_line("\u{f0877} Neighbour evaluation method: ");
 
         match self.eval {
             NeighbourEval::Moore => sb.append("Moore"),
@@ -714,7 +714,7 @@ impl CellSimulation {
             gl::BindSampler(0, *self.render_state.sampler);
             gl::DrawElementsIndirect(gl::TRIANGLES, gl::UNSIGNED_INT, std::ptr::null());
 
-	    //
+            //
             // draw world box as wireframe
             gl::Disable(gl::CULL_FACE);
             gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
@@ -837,7 +837,7 @@ impl CellSimulation {
     }
 
     pub fn ui(&mut self, ui: &mut imgui::Ui) {
-        ui.window("Simulation parameters")
+        ui.window("Cell automata parameters - \u{e7a8} \u{f033d} \u{f17a}")
             .size([400f32, 800f32], imgui::Condition::FirstUseEver)
             .build(|| {
                 let (text, color) = if self.paused {
@@ -847,8 +847,13 @@ impl CellSimulation {
                 };
 
                 ui.text_colored(color, text);
+                ui.same_line();
+                if ui.button("\u{f0e62} Restart with random seed (G)") {
+                    self.reset_grid();
+                }
                 ui.separator();
-                ui.text("Cell evaluation rules");
+
+                ui.text("\u{f016b} Cell evaluation rules");
 
                 let mut eval_rule = self.params.rule;
                 if let Some(_) = ui.begin_combo("##", &self.eval_rules[self.params.rule].name) {
@@ -876,7 +881,7 @@ impl CellSimulation {
 
                 let mut update_freq = self.params.update_freq.as_millis() as u32;
                 if ui.slider(
-                    "Update frequency (ms)",
+                    "\u{f06b0} Update frequency (ms)",
                     CellSimulationParams::MIN_UPDATE_FREQ.as_millis() as u32,
                     CellSimulationParams::MAX_UPDATE_FREQ.as_millis() as u32,
                     &mut update_freq,
@@ -887,7 +892,7 @@ impl CellSimulation {
                 ui.separator();
 
                 if let Some(_) = ui.begin_combo(
-                    "Coloring",
+                    "\u{e22b} Coloring",
                     ColoringMethod::description(self.params.coloring_method),
                 ) {
                     enum_iterator::all::<ColoringMethod>().for_each(|e| {
@@ -904,29 +909,28 @@ impl CellSimulation {
                 }
 
                 ui.separator();
-                ui.text(format!("Live cells: {}", self.params.live_cells));
+                ui.text(format!("\u{f0ed5} Live cells: {}", self.params.live_cells));
 
                 ui.separator();
-                ui.text("OpenGL debug output");
+                ui.text("\u{f0a30} \u{e20f} Show OpenGL debug output");
                 unsafe {
                     use crate::window::G_OPTIONS;
-                    ui.checkbox("Application messages", &mut G_OPTIONS.debug_show_app_msg);
-                    ui.checkbox(
-                        "OpenGL subsystem messages",
-                        &mut G_OPTIONS.debug_show_glsys_msg,
-                    );
+                    ui.checkbox("application messages", &mut G_OPTIONS.debug_show_app_msg);
+                    ui.checkbox("GPU driver", &mut G_OPTIONS.debug_show_glsys_msg);
                 }
 
                 ui.separator();
                 ui.group(|| {
-                    ui.text("World size");
+                    ui.text("\u{e22e} World size");
                     Pow2Iterator::new(
                         CellSimulationParams::WORLD_SIZE_MIN,
                         CellSimulationParams::WORLS_SIZE_MAX,
                     )
                     .for_each(|p| {
-                        if ui.radio_button_bool(format!("{p}x{p}x{p}"), self.params.world_size == p)
-                        {
+                        if ui.radio_button_bool(
+                            format!("{p}x{p}x{p} \u{f1b3}"),
+                            self.params.world_size == p,
+                        ) {
                             self.params.world_size = p;
                             self.reset_grid();
                         }

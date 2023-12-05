@@ -753,11 +753,9 @@ pub enum OpenGLError {
 
 impl OpenGLError {
     pub fn current_error(s: &str) -> Self {
-	let e = unsafe {
-	    gl::GetError()
-	};
+        let e = unsafe { gl::GetError() };
 
-	Self::GenericError(s.to_string(), e)
+        Self::GenericError(s.to_string(), e)
     }
 }
 
