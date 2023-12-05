@@ -13,12 +13,6 @@ layout (binding = 1) uniform CellEvalRule {
   uint nRules;
 } evalRule;
 
-#if defined(LIGHTING_ON)
-layout (binding = 2) uniform TransformMatrices {
-  mat4 viewTransform;
-};
-#endif
-
 const uint EVAL_NEIGHBOR_MOORE = 0;
 const uint EVAL_NEIGHBOR_VN = 1;
 
@@ -201,12 +195,7 @@ void main() {
 
   if (cellState != 0) {
     const uint idx = atomicAdd(draw_indirect.cmds[0].instance_count, 1) + 1;
-    rcells.data[idx].modelViewMatrix =
-#if defined(LIGHTING_ON)
-      viewTransform *
-#endif      
-      BuildTranslation(ccs.data[cellIdx].center);
-    
+    rcells.data[idx].modelViewMatrix = BuildTranslation(ccs.data[cellIdx].center);
     rcells.data[idx].center = ccs.data[cellIdx].center;
     rcells.data[idx].state = cellState;
   }

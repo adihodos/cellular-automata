@@ -8,7 +8,8 @@ const uint COLOR_BY_COORDS = 1;
 const uint COLOR_BY_STATE = 2;
 
 layout (binding = 0) uniform VertexShaderParams {
-  mat4 projectionMatrix;
+  mat4 projectionViewMatrix;
+  mat4 viewMatrix;
   uint cellStates;
   uint coloring;
   uint worldSize;
@@ -23,7 +24,7 @@ layout (binding = 1) uniform LightingParams {
 #endif
 
 struct CubeInstance {
-  mat4 modelViewMatrix;
+  mat4 modelMatrix;
   vec3 center;
   uint state;
 };
@@ -43,7 +44,7 @@ layout (location = 1) out VS_OUT_FS_IN {
 } vs_out;
 
 void main() {
-  vec4 position = shaderParams.projectionMatrix * cells.instances[gl_BaseInstance + gl_InstanceID].modelViewMatrix * vec4(vs_in_pos, 1.0);
+  vec4 position = shaderParams.projectionViewMatrix * cells.instances[gl_BaseInstance + gl_InstanceID].modelMatrix * vec4(vs_in_pos, 1.0);
 
   vec4 color;
   if (shaderParams.coloring == COLOR_BY_STATE) {
@@ -57,7 +58,8 @@ void main() {
   }
 
 #if defined(LIGHTING_ON)
-  vec3 N = normalize(mat3(cells.instances[gl_BaseInstance + gl_InstanceID].modelViewMatrix) * vs_in_normal);
+  // model matrix is just a translation so we can ignore it
+  vec3 N = normalize(mat3(shaderParams.viewMatrix) * vs_in_normal);
   vec3 L = lightingParams.directionalLight;
   color = vec4((lightingParams.lightAmbient + max(dot(N, L), 0.0) * lightingParams.directionalLightColor) * color.xyz, 1.0);
 #endif
