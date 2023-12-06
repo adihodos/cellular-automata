@@ -182,6 +182,7 @@ struct CellSimulationRenderState {
     ubo_transform: UniqueBuffer,
     ubo_lighting: UniqueBuffer,
     ubo_rules: UniqueBuffer,
+    ssbo_packed_cells: UniqueBuffer,
     draw_indirect_buffer: UniqueBuffer,
     copy_draw_ind_buf: UniqueBuffer,
     instances_current: UniqueBuffer,
@@ -211,6 +212,10 @@ impl CellSimulationRenderState {
 
         let ubo_rules = create_buffer(size_of::<CSUniformEvalRule>(), Some(gl::MAP_WRITE_BIT))
             .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create UBO"))?;
+
+	let ssbo_packed_cells = create_buffer(size_of::<u32>() * max_instances, Some(gl::MAP_READ_BIT))            .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create SSBO"))?;
+
+	label_object(gl::BUFFER, *ssbo_packed_cells, "SSBO Packed cells data");
 
         let draw_indirect_buffer = UniqueBuffer::new(unsafe {
             let mut buf: GLuint = 0;
@@ -311,7 +316,7 @@ impl CellSimulationRenderState {
 
         let vertexshader = ShaderProgramBuilder::new()
             .add_file(&"data/shaders/instanced.vert")
-            .add_macros(&[("LIGHTING_ON", None)])
+            .add_macros(&[("LIGHTING_ON", None), ("PACKED_DATA", None)])
             .compile(ShaderType::Vertex)?;
 
         let fragmentshader =
@@ -394,6 +399,7 @@ impl CellSimulationRenderState {
             ubo_rules,
             ubo_lighting,
             ubo_transform,
+	    ssbo_packed_cells,
             draw_indirect_buffer,
             instances_current,
             instances_previous,
@@ -433,8 +439,11 @@ impl CellSimulationRenderState {
                 (cells.len() + 1) * std::mem::size_of::<CellRenderDataGPU>(),
                 Some(gl::MAP_WRITE_BIT),
             )
-            .expect("Failed to create SSBO");
+		.expect("Failed to create SSBO");
 
+	    self.ssbo_packed_cells = create_buffer(size_of::<u32>() * cells.len(), Some(gl::MAP_READ_BIT))
+		.expect("Failed to resize SSBO");
+	    
             self.gpu_buf_capacity = cells.len();
         }
 
@@ -657,6 +666,10 @@ pub struct CellSimulation {
 
 impl CellSimulation {
     pub fn new() -> CellSimulation {
+	let v : glm::Vec4 = [-1f32, 0.25f32, -0.98f32, 0.56f32].into();
+	let u = crate::pack::packSnorm4x8(v);
+	let unpacked = crate::pack::unpackSnorm4x8(u);
+	log::info!("Packed original -> {v} -> packed -> {u} -> unpacked -> {unpacked}");
         let grid_current = generate_grid(CellSimulationParams::WORLD_INITIAL_SIZE as usize);
         let initial_grid = grid_current.clone();
         let mut render_state = CellSimulationRenderState::new(
@@ -761,10 +774,11 @@ impl CellSimulation {
                 .as_ptr() as *const _,
             );
 
-            gl::BindBufferBase(
+            gl::BindBuffersBase(
                 gl::SHADER_STORAGE_BUFFER,
                 0,
-                *self.render_state.instances_live,
+		2,
+                [*self.render_state.instances_live, *self.render_state.ssbo_packed_cells].as_ptr(),
             );
             gl::BindBuffer(
                 gl::DRAW_INDIRECT_BUFFER,
@@ -874,12 +888,13 @@ impl CellSimulation {
             gl::BindBuffersBase(
                 gl::SHADER_STORAGE_BUFFER,
                 0,
-                4,
+                5,
                 [
                     *self.render_state.draw_indirect_buffer,
                     *self.render_state.instances_current,
                     *self.render_state.instances_previous,
                     *self.render_state.instances_live,
+		    *self.render_state.ssbo_packed_cells,
                 ]
                 .as_ptr(),
             );
@@ -984,6 +999,28 @@ impl CellSimulation {
                     ui.checkbox("application messages", &mut G_OPTIONS.debug_show_app_msg);
                     ui.checkbox("GPU driver", &mut G_OPTIONS.debug_show_glsys_msg);
                 }
+
+		if ui.button("Save packed cells data") {
+		    UniqueBufferMapping::new(*self.render_state.ssbo_packed_cells, gl::MAP_READ_BIT).map(|buf| {
+			let cdata = unsafe {
+			    std::slice::from_raw_parts(buf.as_ptr::<u32>(), self.params.live_cells as usize)
+			};
+
+			if let Ok(mut f) = std::fs::File::create("packed.cells.txt") {
+			    for c in cdata {
+				let cstate = (c >> 24) & 0xFF;
+				let cx = c & 0xFF;
+				let cy = (c >> 8) & 0xFF;
+				let cz = (c >> 16) & 0xFF;
+
+				use std::io::Write;
+				let _ = writeln!(&mut f, "[{cx}, {cy}, {cz}] -> {cstate}");
+				// let _ = writeln!(&mut f, "[{c}]");
+			    }
+			}
+		    });
+
+		}
 
                 ui.separator();
                 ui.group(|| {
