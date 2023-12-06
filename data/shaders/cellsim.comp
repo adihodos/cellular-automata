@@ -103,12 +103,6 @@ struct CellState {
   uint state;
 };
 
-struct CellRenderDataEx {
-    mat4 modelViewMatrix;
-    vec3 center;
-    uint state;
-};
-
 layout (std430, binding = 1) buffer CellsCurrentState {
   CellState data[];
 } ccs;
@@ -117,11 +111,7 @@ layout (std430, binding = 2) buffer CellsNextState {
   CellState data[];
 } cns;
 
-layout (std430, binding = 3) writeonly buffer RenderedCells {
-  CellRenderDataEx data[];
-} rcells;
-
-layout (std430, binding = 4) writeonly buffer RenderedCellsIndices {
+layout (std430, binding = 3) writeonly buffer RenderedCellsIndices {
   uint cellData[];
 } rcells_idx;
 
@@ -203,10 +193,6 @@ void main() {
 
   if (cellState != 0) {
     const uint idx = atomicAdd(draw_indirect.cmds[0].instance_count, 1) + 1;
-    rcells.data[idx].modelViewMatrix = BuildTranslation(ccs.data[cellIdx].center);
-    rcells.data[idx].center = ccs.data[cellIdx].center;
-    rcells.data[idx].state = cellState;
-
     rcells_idx.cellData[idx] = packCellData(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y, gl_GlobalInvocationID.z, cellState);
   }
 }

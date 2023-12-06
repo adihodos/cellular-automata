@@ -51,14 +51,6 @@ struct CellStateGPU {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C, align(16))]
-struct CellRenderDataGPU {
-    transform: glm::Mat4,
-    center: glm::Vec3,
-    state: u32,
-}
-
-#[derive(Copy, Clone)]
 #[repr(C)]
 struct DrawElementsIndirectCommand {
     count: u32,
@@ -70,41 +62,43 @@ struct DrawElementsIndirectCommand {
 
 #[rustfmt::skip]
 mod mesh_geometry {
-    pub const HALF_WIDTH: f32 = 0.5f32;
-    pub const HALF_HEIGHT: f32 = 0.5f32;
-    pub const HALF_DEPTH: f32 = 0.5f32;
-
     #[derive(Copy, Clone)]
     pub struct VertexPN {
 	pub p: [f32; 3],
 	pub n: [f32; 3]
     }
 
+    #[rustfmt::skip]
     pub const UNIT_CUBE_VERTICES: [VertexPN; 24] = [
-	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n: [0f32, 0f32, -1f32] },
-	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n:[0f32, 0f32, -1f32] },
-	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n:[0f32, 0f32, -1f32] },
-	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n:[0f32, 0f32, -1f32] },
-	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n: [0f32, 0f32, 1f32] },
-	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n:[0f32, 0f32, 1f32] },
-	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[0f32, 0f32, 1f32] },
-	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[0f32, 0f32, 1f32] },
-	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n: [0f32, 1f32, 0f32] },
-	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[0f32, 1f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[0f32, 1f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n:[0f32, 1f32, 0f32] },
-	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n: [0f32, -1f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n:[0f32, -1f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n:[0f32, -1f32, 0f32] },
-	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n:[0f32, -1f32, 0f32] },
-	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n: [-1f32, 0f32, 0f32] },
-	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[-1f32, 0f32, 0f32] },
-	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n:[-1f32, 0f32, 0f32] },
-	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n:[-1f32, 0f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n: [1f32, 0f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n:[1f32, 0f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[1f32, 0f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n:[1f32, 0f32, 0f32] },
+	VertexPN { p:  [-0.5f32, -0.5f32, -0.5f32], n: [0f32, 0f32, -1f32] },
+	VertexPN { p:  [-0.5f32, 0.5f32, -0.5f32], n:[0f32, 0f32, -1f32] },
+	VertexPN { p:  [0.5f32, 0.5f32, -0.5f32], n:[0f32, 0f32, -1f32] },
+	VertexPN { p:  [0.5f32, -0.5f32, -0.5f32], n:[0f32, 0f32, -1f32] },
+
+	VertexPN { p:  [-0.5f32, -0.5f32, 0.5f32], n: [0f32, 0f32, 1f32] },
+	VertexPN { p:  [0.5f32, -0.5f32, 0.5f32], n:[0f32, 0f32, 1f32] },
+	VertexPN { p:  [0.5f32, 0.5f32, 0.5f32], n:[0f32, 0f32, 1f32] },
+	VertexPN { p:  [-0.5f32, 0.5f32, 0.5f32], n:[0f32, 0f32, 1f32] },
+	
+	VertexPN { p:  [-0.5f32, 0.5f32, -0.5f32], n: [0f32, 1f32, 0f32] },
+	VertexPN { p:  [-0.5f32, 0.5f32, 0.5f32], n:[0f32, 1f32, 0f32] },
+	VertexPN { p:  [0.5f32, 0.5f32, 0.5f32], n:[0f32, 1f32, 0f32] },
+	VertexPN { p:  [0.5f32, 0.5f32, -0.5f32], n:[0f32, 1f32, 0f32] },
+	
+	VertexPN { p:  [-0.5f32, -0.5f32, -0.5f32], n: [0f32, -1f32, 0f32] },
+	VertexPN { p:  [0.5f32, -0.5f32, -0.5f32], n:[0f32, -1f32, 0f32] },
+	VertexPN { p:  [0.5f32, -0.5f32, 0.5f32], n:[0f32, -1f32, 0f32] },
+	VertexPN { p:  [-0.5f32, -0.5f32, 0.5f32], n:[0f32, -1f32, 0f32] },
+	
+	VertexPN { p:  [-0.5f32, -0.5f32, 0.5f32], n: [-1f32, 0f32, 0f32] },
+	VertexPN { p:  [-0.5f32, 0.5f32, 0.5f32], n:[-1f32, 0f32, 0f32] },
+	VertexPN { p:  [-0.5f32, 0.5f32, -0.5f32], n:[-1f32, 0f32, 0f32] },
+	VertexPN { p:  [-0.5f32, -0.5f32, -0.5f32], n:[-1f32, 0f32, 0f32] },
+	
+	VertexPN { p:  [0.5f32, -0.5f32, -0.5f32], n: [1f32, 0f32, 0f32] },
+	VertexPN { p:  [0.5f32, 0.5f32, -0.5f32], n:[1f32, 0f32, 0f32] },
+	VertexPN { p:  [0.5f32, 0.5f32, 0.5f32], n:[1f32, 0f32, 0f32] },
+	VertexPN { p:  [0.5f32, -0.5f32, 0.5f32], n:[1f32, 0f32, 0f32] },
     ];
 
     pub const UNIT_CUBE_INDICES: [u32; 36] = [
@@ -187,7 +181,6 @@ struct CellSimulationRenderState {
     copy_draw_ind_buf: UniqueBuffer,
     instances_current: UniqueBuffer,
     instances_previous: UniqueBuffer,
-    instances_live: UniqueBuffer,
     vertexbuffer: UniqueBuffer,
     indexbuffer: UniqueBuffer,
     vertexarray: UniqueVertexArray,
@@ -195,6 +188,8 @@ struct CellSimulationRenderState {
     fragmentshader: UniqueShaderProgram,
     compute_shader: UniqueShaderProgram,
     pipeline: UniquePipeline,
+    vertexshader_basic: UniqueShaderProgram,
+    pipeline_basic: UniquePipeline,
     gradient_tex: UniqueTexture,
     sampler: UniqueSampler,
     gpu_buf_capacity: usize,
@@ -213,9 +208,13 @@ impl CellSimulationRenderState {
         let ubo_rules = create_buffer(size_of::<CSUniformEvalRule>(), Some(gl::MAP_WRITE_BIT))
             .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create UBO"))?;
 
-	let ssbo_packed_cells = create_buffer(size_of::<u32>() * max_instances, Some(gl::MAP_READ_BIT))            .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create SSBO"))?;
+        let ssbo_packed_cells = create_buffer(
+            size_of::<u32>() * (max_instances + 1),
+            Some(gl::MAP_WRITE_BIT),
+        )
+        .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create SSBO"))?;
 
-	label_object(gl::BUFFER, *ssbo_packed_cells, "SSBO Packed cells data");
+        label_object(gl::BUFFER, *ssbo_packed_cells, "SSBO Packed cells data");
 
         let draw_indirect_buffer = UniqueBuffer::new(unsafe {
             let mut buf: GLuint = 0;
@@ -245,12 +244,6 @@ impl CellSimulationRenderState {
 
         let instances_previous = create_buffer(
             size_of::<CellStateGPU>() * max_instances,
-            Some(gl::MAP_WRITE_BIT),
-        )
-        .expect("Failed to create SSBO");
-
-        let instances_live = create_buffer(
-            size_of::<CellRenderDataGPU>() * (max_instances + 1),
             Some(gl::MAP_WRITE_BIT),
         )
         .expect("Failed to create SSBO");
@@ -338,6 +331,18 @@ impl CellSimulationRenderState {
             .add_macros(&[("LIGHTING_ON", None)])
             .compile(ShaderType::Compute)?;
 
+        let vertexshader_basic =
+            create_shader_program_from_file("data/shaders/basic.vert", ShaderType::Vertex)?;
+        let pipeline_basic = UniquePipeline::new(unsafe {
+            let mut pipeline: GLuint = 0;
+            gl::CreateProgramPipelines(1, &mut pipeline);
+            gl::UseProgramStages(pipeline, gl::VERTEX_SHADER_BIT, *vertexshader_basic);
+            gl::UseProgramStages(pipeline, gl::FRAGMENT_SHADER_BIT, *fragmentshader);
+
+            pipeline
+        })
+        .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create graphics pipeline"))?;
+
         use enterpolation::Generator;
         let color_palette = ConstEquidistantLinear::<f32, _, 3>::equidistant_unchecked([
             LinSrgb::new(0.95, 0.90, 0.30),
@@ -399,11 +404,10 @@ impl CellSimulationRenderState {
             ubo_rules,
             ubo_lighting,
             ubo_transform,
-	    ssbo_packed_cells,
+            ssbo_packed_cells,
             draw_indirect_buffer,
             instances_current,
             instances_previous,
-            instances_live,
             vertexbuffer,
             indexbuffer,
             vertexarray,
@@ -411,6 +415,8 @@ impl CellSimulationRenderState {
             fragmentshader,
             pipeline,
             compute_shader,
+            vertexshader_basic,
+            pipeline_basic,
             gradient_tex,
             sampler,
             copy_draw_ind_buf,
@@ -420,7 +426,6 @@ impl CellSimulationRenderState {
 
     fn set_initial_state(&mut self, cells: &[CellStateGPU], world_size: u32) {
         let live_cells = cells.iter().filter(|c| c.state != 0).count() as u32;
-        log::info!("set initial state - live cells {live_cells}");
 
         if cells.len() > self.gpu_buf_capacity {
             let _ = OpenGLDebugScopePush::new(0x1, "[[Resizing buffers]]");
@@ -435,15 +440,13 @@ impl CellSimulationRenderState {
                 .expect("Failed to create SSBO");
             self.instances_previous = create_buffer(size_of_val(cells), Some(gl::MAP_WRITE_BIT))
                 .expect("Failed to create SSBO");
-            self.instances_live = create_buffer(
-                (cells.len() + 1) * std::mem::size_of::<CellRenderDataGPU>(),
+
+            self.ssbo_packed_cells = create_buffer(
+                size_of::<u32>() * (cells.len() + 1),
                 Some(gl::MAP_WRITE_BIT),
             )
-		.expect("Failed to create SSBO");
+            .expect("Failed to resize SSBO");
 
-	    self.ssbo_packed_cells = create_buffer(size_of::<u32>() * cells.len(), Some(gl::MAP_READ_BIT))
-		.expect("Failed to resize SSBO");
-	    
             self.gpu_buf_capacity = cells.len();
         }
 
@@ -462,28 +465,30 @@ impl CellSimulationRenderState {
                 });
             });
 
-        UniqueBufferMapping::new(*self.instances_live, gl::MAP_WRITE_BIT).map(|mut buf| {
-            let mut dst = buf.as_mut_ptr::<CellRenderDataGPU>();
+        UniqueBufferMapping::new(*self.ssbo_packed_cells, gl::MAP_WRITE_BIT).map(|mut buf| {
+            let mut dst = buf.as_mut_ptr::<u32>();
 
             //
             // world box
+            let s = world_size / 2;
             unsafe {
-                *dst = CellRenderDataGPU {
-                    transform: glm::Mat4::new_scaling(world_size as f32),
-                    center: glm::Vec3::zeros(),
-                    state: 0xffffffffu32,
-                };
+                *dst = s | (s << 8) | (s << 16) | (0xFF << 24);
                 dst = dst.add(1);
             }
 
-            cells.iter().filter(|c| c.state != 0).for_each(|c| unsafe {
-                *dst = CellRenderDataGPU {
-                    transform: glm::Mat4::new_translation(&c.center),
-                    center: c.center,
-                    state: c.state,
-                };
-                dst = dst.add(1);
-            });
+            for z in 0..world_size {
+                for y in 0..world_size {
+                    for x in 0..world_size {
+                        let c = cells[(z * world_size * world_size + y * world_size + x) as usize];
+                        if c.state != 0 {
+                            unsafe {
+                                *dst = x | (y << 8) | (z << 16) | (c.state << 24);
+                                dst = dst.add(1);
+                            }
+                        };
+                    }
+                }
+            }
         });
 
         UniqueBufferMapping::new(*self.draw_indirect_buffer, gl::MAP_WRITE_BIT).map(
@@ -527,7 +532,6 @@ impl CellRule {
             }
             sb.append(x);
         });
-
 
         sb.push(']');
 
@@ -666,10 +670,6 @@ pub struct CellSimulation {
 
 impl CellSimulation {
     pub fn new() -> CellSimulation {
-	let v : glm::Vec4 = [-1f32, 0.25f32, -0.98f32, 0.56f32].into();
-	let u = crate::pack::packSnorm4x8(v);
-	let unpacked = crate::pack::unpackSnorm4x8(u);
-	log::info!("Packed original -> {v} -> packed -> {u} -> unpacked -> {unpacked}");
         let grid_current = generate_grid(CellSimulationParams::WORLD_INITIAL_SIZE as usize);
         let initial_grid = grid_current.clone();
         let mut render_state = CellSimulationRenderState::new(
@@ -678,6 +678,7 @@ impl CellSimulation {
                 * CellSimulationParams::WORLD_INITIAL_SIZE) as usize,
         )
         .expect("Failed to initialize cell rendering state");
+
         render_state.set_initial_state(&grid_current, CellSimulationParams::WORLD_INITIAL_SIZE);
 
         CellSimulation {
@@ -777,8 +778,8 @@ impl CellSimulation {
             gl::BindBuffersBase(
                 gl::SHADER_STORAGE_BUFFER,
                 0,
-		2,
-                [*self.render_state.instances_live, *self.render_state.ssbo_packed_cells].as_ptr(),
+                1,
+                [*self.render_state.ssbo_packed_cells].as_ptr(),
             );
             gl::BindBuffer(
                 gl::DRAW_INDIRECT_BUFFER,
@@ -794,8 +795,26 @@ impl CellSimulation {
             if self.params.draw_world_box {
                 //
                 // draw world box as wireframe
-                gl::Disable(gl::CULL_FACE);
-                gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
+
+                gl::BindProgramPipeline(*self.render_state.pipeline_basic);
+                gl::ProgramUniform4f(
+                    *self.render_state.vertexshader_basic,
+                    0,
+                    1f32,
+                    0f32,
+                    0f32,
+                    1f32,
+                );
+
+                let transform =
+                    ctx.projection_view * glm::Mat4::new_scaling(self.params.world_size as f32);
+                gl::ProgramUniformMatrix4fv(
+                    *self.render_state.vertexshader_basic,
+                    1,
+                    1,
+                    gl::FALSE,
+                    transform.as_ptr(),
+                );
 
                 gl::DrawElements(
                     gl::LINES,
@@ -803,8 +822,6 @@ impl CellSimulation {
                     gl::UNSIGNED_INT,
                     std::ptr::null::<u32>().offset(UNIT_CUBE_INDICES.len() as isize) as *const _,
                 );
-
-                gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL);
             }
         }
 
@@ -888,13 +905,12 @@ impl CellSimulation {
             gl::BindBuffersBase(
                 gl::SHADER_STORAGE_BUFFER,
                 0,
-                5,
+                4,
                 [
                     *self.render_state.draw_indirect_buffer,
                     *self.render_state.instances_current,
                     *self.render_state.instances_previous,
-                    *self.render_state.instances_live,
-		    *self.render_state.ssbo_packed_cells,
+                    *self.render_state.ssbo_packed_cells,
                 ]
                 .as_ptr(),
             );
@@ -1000,28 +1016,6 @@ impl CellSimulation {
                     ui.checkbox("GPU driver", &mut G_OPTIONS.debug_show_glsys_msg);
                 }
 
-		if ui.button("Save packed cells data") {
-		    UniqueBufferMapping::new(*self.render_state.ssbo_packed_cells, gl::MAP_READ_BIT).map(|buf| {
-			let cdata = unsafe {
-			    std::slice::from_raw_parts(buf.as_ptr::<u32>(), self.params.live_cells as usize)
-			};
-
-			if let Ok(mut f) = std::fs::File::create("packed.cells.txt") {
-			    for c in cdata {
-				let cstate = (c >> 24) & 0xFF;
-				let cx = c & 0xFF;
-				let cy = (c >> 8) & 0xFF;
-				let cz = (c >> 16) & 0xFF;
-
-				use std::io::Write;
-				let _ = writeln!(&mut f, "[{cx}, {cy}, {cz}] -> {cstate}");
-				// let _ = writeln!(&mut f, "[{c}]");
-			    }
-			}
-		    });
-
-		}
-
                 ui.separator();
                 ui.group(|| {
                     ui.text("\u{e22e} World size");
@@ -1121,7 +1115,7 @@ fn generate_grid(tiles: usize) -> Vec<CellStateGPU> {
 
 fn build_simulation_rules() -> Vec<CellRule> {
     vec![
-        CellRuleBuilder::new("445")
+        CellRuleBuilder::new("4/4/5")
             .add_survival_rule(&[4])
             .add_birth_rule(&[4])
             .set_states(5)
