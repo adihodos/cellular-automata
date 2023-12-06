@@ -99,7 +99,6 @@ layout (binding = 0) writeonly buffer DrawIndirectCommand {
 } draw_indirect;
 
 struct CellState {
-  vec3 center;
   uint state;
 };
 

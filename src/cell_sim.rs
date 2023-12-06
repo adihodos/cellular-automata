@@ -44,9 +44,8 @@ struct CSUniformEvalRule {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C, align(16))]
+#[repr(C)]
 struct CellStateGPU {
-    center: glm::Vec3,
     state: u32,
 }
 
@@ -456,10 +455,7 @@ impl CellSimulationRenderState {
                 UniqueBufferMapping::new(grid_buf, gl::MAP_WRITE_BIT).map(|mut buf| {
                     let mut dst = buf.as_mut_ptr::<CellStateGPU>();
                     cells.iter().for_each(|c| unsafe {
-                        dst.write(CellStateGPU {
-                            center: c.center,
-                            state: c.state,
-                        });
+                        dst.write(CellStateGPU { state: c.state });
                         dst = dst.add(1);
                     });
                 });
@@ -1077,21 +1073,7 @@ fn generate_grid(tiles: usize) -> Vec<CellStateGPU> {
     use rand::prelude::*;
     let mut rng = rand::thread_rng();
 
-    let mut grid_current = Vec::with_capacity(tiles * tiles * tiles);
-    for z in 0..tiles {
-        for y in 0..tiles {
-            for x in 0..tiles {
-                grid_current.push(CellStateGPU {
-                    state: 0,
-                    center: glm::Vec3::new(
-                        x as f32 - (tiles / 2) as f32 + 0.5f32,
-                        y as f32 - (tiles / 2) as f32 + 0.5f32,
-                        z as f32 - (tiles / 2) as f32 + 0.5f32,
-                    ),
-                });
-            }
-        }
-    }
+    let mut grid_current = vec![CellStateGPU { state: 0 }; tiles * tiles * tiles];
 
     let init_cluster_size: usize = tiles as usize / 8;
     let cluster_center: usize = tiles as usize / 2;
