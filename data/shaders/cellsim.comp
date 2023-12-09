@@ -99,14 +99,7 @@ layout (binding = 0) writeonly buffer DrawIndirectCommand {
 } draw_indirect;
 
 struct CellState {
-  vec3 center;
   uint state;
-};
-
-struct CellRenderDataEx {
-    mat4 modelViewMatrix;
-    vec3 center;
-    uint state;
 };
 
 layout (std430, binding = 1) buffer CellsCurrentState {
@@ -117,9 +110,9 @@ layout (std430, binding = 2) buffer CellsNextState {
   CellState data[];
 } cns;
 
-layout (std430, binding = 3) writeonly buffer RenderedCells {
-  CellRenderDataEx data[];
-} rcells;
+layout (std430, binding = 3) writeonly buffer RenderedCellsIndices {
+  uint cellData[];
+} rcells_idx;
 
 mat4 BuildTranslation(vec3 delta)
 {
@@ -165,6 +158,10 @@ bool canCellSurvive(const uint aliveNeighbours) {
   return result != 0;
 }
 
+uint packCellData(uint x, uint y, uint z, uint state) {
+  return x | (y << 8) | (z << 16) | (state << 24);
+}
+
 void main() {
   const uint cellIdx = flattenIndex(gl_GlobalInvocationID);
 
@@ -195,8 +192,6 @@ void main() {
 
   if (cellState != 0) {
     const uint idx = atomicAdd(draw_indirect.cmds[0].instance_count, 1) + 1;
-    rcells.data[idx].modelViewMatrix = BuildTranslation(ccs.data[cellIdx].center);
-    rcells.data[idx].center = ccs.data[cellIdx].center;
-    rcells.data[idx].state = cellState;
+    rcells_idx.cellData[idx] = packCellData(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y, gl_GlobalInvocationID.z, cellState);
   }
 }

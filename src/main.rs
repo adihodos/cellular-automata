@@ -2,6 +2,7 @@ mod arcball;
 mod cell_sim;
 mod gl;
 mod gl_utils;
+mod pack;
 mod ui_backend;
 mod window;
 

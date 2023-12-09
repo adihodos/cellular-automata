@@ -3,6 +3,7 @@ use crate::gl_utils::*;
 use crate::window::FrameRenderContext;
 use enum_iterator::Sequence;
 use nalgebra_glm as glm;
+use rand::prelude::Distribution;
 use std::io::{Error, ErrorKind, Result};
 use std::mem::{size_of, size_of_val};
 use std::ops::RangeInclusive;
@@ -35,8 +36,8 @@ struct VSUniformLighting {
 #[derive(Copy, Clone)]
 #[repr(C)]
 struct CSUniformEvalRule {
-    live_n: [u32; 32],
-    birth_n: [u32; 32],
+    live_neighbours: [u32; 32],
+    birth_neighbours: [u32; 32],
     live_count: u32,
     birth_count: u32,
     states: u32,
@@ -44,17 +45,8 @@ struct CSUniformEvalRule {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C, align(16))]
+#[repr(C)]
 struct CellStateGPU {
-    center: glm::Vec3,
-    state: u32,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C, align(16))]
-struct CellRenderDataGPU {
-    transform: glm::Mat4,
-    center: glm::Vec3,
     state: u32,
 }
 
@@ -68,43 +60,64 @@ struct DrawElementsIndirectCommand {
     base_instance: u32,
 }
 
+#[derive(Copy, Clone, Eq, PartialEq)]
+#[repr(u8)]
+enum RandomClusterType {
+    Cube,
+    Sphere,
+}
+
+#[derive(Copy, Clone)]
+struct InitialClusterGenOptions {
+    /// If true, a different random distribution is used for each axis, inseatd of common one
+    independent_axis: bool,
+    cluster_size: u32,
+    cluster_type: RandomClusterType,
+}
+
+impl InitialClusterGenOptions {
+    const MIN_CLUSTER_SIZE: u32 = 4;
+}
+
 #[rustfmt::skip]
 mod mesh_geometry {
-    pub const HALF_WIDTH: f32 = 0.5f32;
-    pub const HALF_HEIGHT: f32 = 0.5f32;
-    pub const HALF_DEPTH: f32 = 0.5f32;
-
     #[derive(Copy, Clone)]
     pub struct VertexPN {
 	pub p: [f32; 3],
 	pub n: [f32; 3]
     }
 
+    #[rustfmt::skip]
     pub const UNIT_CUBE_VERTICES: [VertexPN; 24] = [
-	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n: [0f32, 0f32, -1f32] },
-	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n:[0f32, 0f32, -1f32] },
-	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n:[0f32, 0f32, -1f32] },
-	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n:[0f32, 0f32, -1f32] },
-	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n: [0f32, 0f32, 1f32] },
-	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n:[0f32, 0f32, 1f32] },
-	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[0f32, 0f32, 1f32] },
-	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[0f32, 0f32, 1f32] },
-	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n: [0f32, 1f32, 0f32] },
-	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[0f32, 1f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[0f32, 1f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n:[0f32, 1f32, 0f32] },
-	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n: [0f32, -1f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n:[0f32, -1f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n:[0f32, -1f32, 0f32] },
-	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n:[0f32, -1f32, 0f32] },
-	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n: [-1f32, 0f32, 0f32] },
-	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[-1f32, 0f32, 0f32] },
-	VertexPN { p:  [-HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n:[-1f32, 0f32, 0f32] },
-	VertexPN { p:  [-HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n:[-1f32, 0f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, -HALF_DEPTH], n: [1f32, 0f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, -HALF_DEPTH], n:[1f32, 0f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH], n:[1f32, 0f32, 0f32] },
-	VertexPN { p:  [HALF_WIDTH, -HALF_HEIGHT, HALF_DEPTH], n:[1f32, 0f32, 0f32] },
+	VertexPN { p:  [-0.5f32, -0.5f32, -0.5f32], n: [0f32, 0f32, -1f32] },
+	VertexPN { p:  [-0.5f32, 0.5f32, -0.5f32], n:[0f32, 0f32, -1f32] },
+	VertexPN { p:  [0.5f32, 0.5f32, -0.5f32], n:[0f32, 0f32, -1f32] },
+	VertexPN { p:  [0.5f32, -0.5f32, -0.5f32], n:[0f32, 0f32, -1f32] },
+
+	VertexPN { p:  [-0.5f32, -0.5f32, 0.5f32], n: [0f32, 0f32, 1f32] },
+	VertexPN { p:  [0.5f32, -0.5f32, 0.5f32], n:[0f32, 0f32, 1f32] },
+	VertexPN { p:  [0.5f32, 0.5f32, 0.5f32], n:[0f32, 0f32, 1f32] },
+	VertexPN { p:  [-0.5f32, 0.5f32, 0.5f32], n:[0f32, 0f32, 1f32] },
+	
+	VertexPN { p:  [-0.5f32, 0.5f32, -0.5f32], n: [0f32, 1f32, 0f32] },
+	VertexPN { p:  [-0.5f32, 0.5f32, 0.5f32], n:[0f32, 1f32, 0f32] },
+	VertexPN { p:  [0.5f32, 0.5f32, 0.5f32], n:[0f32, 1f32, 0f32] },
+	VertexPN { p:  [0.5f32, 0.5f32, -0.5f32], n:[0f32, 1f32, 0f32] },
+	
+	VertexPN { p:  [-0.5f32, -0.5f32, -0.5f32], n: [0f32, -1f32, 0f32] },
+	VertexPN { p:  [0.5f32, -0.5f32, -0.5f32], n:[0f32, -1f32, 0f32] },
+	VertexPN { p:  [0.5f32, -0.5f32, 0.5f32], n:[0f32, -1f32, 0f32] },
+	VertexPN { p:  [-0.5f32, -0.5f32, 0.5f32], n:[0f32, -1f32, 0f32] },
+	
+	VertexPN { p:  [-0.5f32, -0.5f32, 0.5f32], n: [-1f32, 0f32, 0f32] },
+	VertexPN { p:  [-0.5f32, 0.5f32, 0.5f32], n:[-1f32, 0f32, 0f32] },
+	VertexPN { p:  [-0.5f32, 0.5f32, -0.5f32], n:[-1f32, 0f32, 0f32] },
+	VertexPN { p:  [-0.5f32, -0.5f32, -0.5f32], n:[-1f32, 0f32, 0f32] },
+	
+	VertexPN { p:  [0.5f32, -0.5f32, -0.5f32], n: [1f32, 0f32, 0f32] },
+	VertexPN { p:  [0.5f32, 0.5f32, -0.5f32], n:[1f32, 0f32, 0f32] },
+	VertexPN { p:  [0.5f32, 0.5f32, 0.5f32], n:[1f32, 0f32, 0f32] },
+	VertexPN { p:  [0.5f32, -0.5f32, 0.5f32], n:[1f32, 0f32, 0f32] },
     ];
 
     pub const UNIT_CUBE_INDICES: [u32; 36] = [
@@ -182,11 +195,11 @@ struct CellSimulationRenderState {
     ubo_transform: UniqueBuffer,
     ubo_lighting: UniqueBuffer,
     ubo_rules: UniqueBuffer,
+    ssbo_packed_cells: UniqueBuffer,
     draw_indirect_buffer: UniqueBuffer,
     copy_draw_ind_buf: UniqueBuffer,
     instances_current: UniqueBuffer,
     instances_previous: UniqueBuffer,
-    instances_live: UniqueBuffer,
     vertexbuffer: UniqueBuffer,
     indexbuffer: UniqueBuffer,
     vertexarray: UniqueVertexArray,
@@ -194,6 +207,8 @@ struct CellSimulationRenderState {
     fragmentshader: UniqueShaderProgram,
     compute_shader: UniqueShaderProgram,
     pipeline: UniquePipeline,
+    vertexshader_basic: UniqueShaderProgram,
+    pipeline_basic: UniquePipeline,
     gradient_tex: UniqueTexture,
     sampler: UniqueSampler,
     gpu_buf_capacity: usize,
@@ -211,6 +226,16 @@ impl CellSimulationRenderState {
 
         let ubo_rules = create_buffer(size_of::<CSUniformEvalRule>(), Some(gl::MAP_WRITE_BIT))
             .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create UBO"))?;
+
+        label_object(gl::BUFFER, *ubo_rules, "UBO cell rules");
+
+        let ssbo_packed_cells = create_buffer(
+            size_of::<u32>() * (max_instances + 1),
+            Some(gl::MAP_WRITE_BIT),
+        )
+        .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create SSBO"))?;
+
+        label_object(gl::BUFFER, *ssbo_packed_cells, "SSBO Packed cells data");
 
         let draw_indirect_buffer = UniqueBuffer::new(unsafe {
             let mut buf: GLuint = 0;
@@ -240,12 +265,6 @@ impl CellSimulationRenderState {
 
         let instances_previous = create_buffer(
             size_of::<CellStateGPU>() * max_instances,
-            Some(gl::MAP_WRITE_BIT),
-        )
-        .expect("Failed to create SSBO");
-
-        let instances_live = create_buffer(
-            size_of::<CellRenderDataGPU>() * (max_instances + 1),
             Some(gl::MAP_WRITE_BIT),
         )
         .expect("Failed to create SSBO");
@@ -311,7 +330,7 @@ impl CellSimulationRenderState {
 
         let vertexshader = ShaderProgramBuilder::new()
             .add_file(&"data/shaders/instanced.vert")
-            .add_macros(&[("LIGHTING_ON", None)])
+            .add_macros(&[("LIGHTING_ON", None), ("PACKED_DATA", None)])
             .compile(ShaderType::Vertex)?;
 
         let fragmentshader =
@@ -332,6 +351,18 @@ impl CellSimulationRenderState {
             .add_file(&"data/shaders/cellsim.comp")
             .add_macros(&[("LIGHTING_ON", None)])
             .compile(ShaderType::Compute)?;
+
+        let vertexshader_basic =
+            create_shader_program_from_file("data/shaders/basic.vert", ShaderType::Vertex)?;
+        let pipeline_basic = UniquePipeline::new(unsafe {
+            let mut pipeline: GLuint = 0;
+            gl::CreateProgramPipelines(1, &mut pipeline);
+            gl::UseProgramStages(pipeline, gl::VERTEX_SHADER_BIT, *vertexshader_basic);
+            gl::UseProgramStages(pipeline, gl::FRAGMENT_SHADER_BIT, *fragmentshader);
+
+            pipeline
+        })
+        .ok_or_else(|| Error::new(ErrorKind::Other, "Failed to create graphics pipeline"))?;
 
         use enterpolation::Generator;
         let color_palette = ConstEquidistantLinear::<f32, _, 3>::equidistant_unchecked([
@@ -394,10 +425,10 @@ impl CellSimulationRenderState {
             ubo_rules,
             ubo_lighting,
             ubo_transform,
+            ssbo_packed_cells,
             draw_indirect_buffer,
             instances_current,
             instances_previous,
-            instances_live,
             vertexbuffer,
             indexbuffer,
             vertexarray,
@@ -405,6 +436,8 @@ impl CellSimulationRenderState {
             fragmentshader,
             pipeline,
             compute_shader,
+            vertexshader_basic,
+            pipeline_basic,
             gradient_tex,
             sampler,
             copy_draw_ind_buf,
@@ -414,7 +447,6 @@ impl CellSimulationRenderState {
 
     fn set_initial_state(&mut self, cells: &[CellStateGPU], world_size: u32) {
         let live_cells = cells.iter().filter(|c| c.state != 0).count() as u32;
-        log::info!("set initial state - live cells {live_cells}");
 
         if cells.len() > self.gpu_buf_capacity {
             let _ = OpenGLDebugScopePush::new(0x1, "[[Resizing buffers]]");
@@ -429,11 +461,12 @@ impl CellSimulationRenderState {
                 .expect("Failed to create SSBO");
             self.instances_previous = create_buffer(size_of_val(cells), Some(gl::MAP_WRITE_BIT))
                 .expect("Failed to create SSBO");
-            self.instances_live = create_buffer(
-                (cells.len() + 1) * std::mem::size_of::<CellRenderDataGPU>(),
+
+            self.ssbo_packed_cells = create_buffer(
+                size_of::<u32>() * (cells.len() + 1),
                 Some(gl::MAP_WRITE_BIT),
             )
-            .expect("Failed to create SSBO");
+            .expect("Failed to resize SSBO");
 
             self.gpu_buf_capacity = cells.len();
         }
@@ -444,37 +477,36 @@ impl CellSimulationRenderState {
                 UniqueBufferMapping::new(grid_buf, gl::MAP_WRITE_BIT).map(|mut buf| {
                     let mut dst = buf.as_mut_ptr::<CellStateGPU>();
                     cells.iter().for_each(|c| unsafe {
-                        dst.write(CellStateGPU {
-                            center: c.center,
-                            state: c.state,
-                        });
+                        dst.write(CellStateGPU { state: c.state });
                         dst = dst.add(1);
                     });
                 });
             });
 
-        UniqueBufferMapping::new(*self.instances_live, gl::MAP_WRITE_BIT).map(|mut buf| {
-            let mut dst = buf.as_mut_ptr::<CellRenderDataGPU>();
+        UniqueBufferMapping::new(*self.ssbo_packed_cells, gl::MAP_WRITE_BIT).map(|mut buf| {
+            let mut dst = buf.as_mut_ptr::<u32>();
 
             //
             // world box
+            let s = world_size / 2;
             unsafe {
-                *dst = CellRenderDataGPU {
-                    transform: glm::Mat4::new_scaling(world_size as f32),
-                    center: glm::Vec3::zeros(),
-                    state: 0xffffffffu32,
-                };
+                *dst = s | (s << 8) | (s << 16) | (0xFF << 24);
                 dst = dst.add(1);
             }
 
-            cells.iter().filter(|c| c.state != 0).for_each(|c| unsafe {
-                *dst = CellRenderDataGPU {
-                    transform: glm::Mat4::new_translation(&c.center),
-                    center: c.center,
-                    state: c.state,
-                };
-                dst = dst.add(1);
-            });
+            for z in 0..world_size {
+                for y in 0..world_size {
+                    for x in 0..world_size {
+                        let c = cells[(z * world_size * world_size + y * world_size + x) as usize];
+                        if c.state != 0 {
+                            unsafe {
+                                *dst = x | (y << 8) | (z << 16) | (c.state << 24);
+                                dst = dst.add(1);
+                            }
+                        };
+                    }
+                }
+            }
         });
 
         UniqueBufferMapping::new(*self.draw_indirect_buffer, gl::MAP_WRITE_BIT).map(
@@ -518,7 +550,6 @@ impl CellRule {
             }
             sb.append(x);
         });
-
 
         sb.push(']');
 
@@ -634,6 +665,7 @@ struct CellSimulationParams {
     live_cells: u32,
     world_size: u32,
     draw_world_box: bool,
+    cluster: InitialClusterGenOptions,
 }
 
 impl CellSimulationParams {
@@ -657,7 +689,14 @@ pub struct CellSimulation {
 
 impl CellSimulation {
     pub fn new() -> CellSimulation {
-        let grid_current = generate_grid(CellSimulationParams::WORLD_INITIAL_SIZE as usize);
+        let cluster = InitialClusterGenOptions {
+            independent_axis: true,
+            cluster_size: 8,
+            cluster_type: RandomClusterType::Cube,
+        };
+
+        let grid_current =
+            generate_grid(CellSimulationParams::WORLD_INITIAL_SIZE as usize, &cluster);
         let initial_grid = grid_current.clone();
         let mut render_state = CellSimulationRenderState::new(
             (CellSimulationParams::WORLD_INITIAL_SIZE
@@ -665,6 +704,7 @@ impl CellSimulation {
                 * CellSimulationParams::WORLD_INITIAL_SIZE) as usize,
         )
         .expect("Failed to initialize cell rendering state");
+
         render_state.set_initial_state(&grid_current, CellSimulationParams::WORLD_INITIAL_SIZE);
 
         CellSimulation {
@@ -674,11 +714,12 @@ impl CellSimulation {
             eval_rules: build_simulation_rules(),
             params: CellSimulationParams {
                 rule: 0,
-                update_freq: std::time::Duration::from_millis(500),
+                update_freq: std::time::Duration::from_millis(60),
                 coloring_method: ColoringMethod::CenterToRGB,
                 live_cells: 0,
                 world_size: CellSimulationParams::WORLD_INITIAL_SIZE,
                 draw_world_box: true,
+                cluster,
             },
             time_elapsed: std::time::Duration::from_millis(0),
             paused: true,
@@ -761,10 +802,11 @@ impl CellSimulation {
                 .as_ptr() as *const _,
             );
 
-            gl::BindBufferBase(
+            gl::BindBuffersBase(
                 gl::SHADER_STORAGE_BUFFER,
                 0,
-                *self.render_state.instances_live,
+                1,
+                [*self.render_state.ssbo_packed_cells].as_ptr(),
             );
             gl::BindBuffer(
                 gl::DRAW_INDIRECT_BUFFER,
@@ -780,8 +822,26 @@ impl CellSimulation {
             if self.params.draw_world_box {
                 //
                 // draw world box as wireframe
-                gl::Disable(gl::CULL_FACE);
-                gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
+
+                gl::BindProgramPipeline(*self.render_state.pipeline_basic);
+                gl::ProgramUniform4f(
+                    *self.render_state.vertexshader_basic,
+                    0,
+                    1f32,
+                    0f32,
+                    0f32,
+                    1f32,
+                );
+
+                let transform =
+                    ctx.projection_view * glm::Mat4::new_scaling(self.params.world_size as f32);
+                gl::ProgramUniformMatrix4fv(
+                    *self.render_state.vertexshader_basic,
+                    1,
+                    1,
+                    gl::FALSE,
+                    transform.as_ptr(),
+                );
 
                 gl::DrawElements(
                     gl::LINES,
@@ -789,8 +849,6 @@ impl CellSimulation {
                     gl::UNSIGNED_INT,
                     std::ptr::null::<u32>().offset(UNIT_CUBE_INDICES.len() as isize) as *const _,
                 );
-
-                gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL);
             }
         }
 
@@ -808,7 +866,7 @@ impl CellSimulation {
     }
 
     fn reset_grid(&mut self) {
-        self.grid_current = generate_grid(self.params.world_size as usize);
+        self.grid_current = generate_grid(self.params.world_size as usize, &self.params.cluster);
         self.initial_grid = self.grid_current.clone();
         self.render_state
             .set_initial_state(&self.grid_current, self.params.world_size);
@@ -826,8 +884,8 @@ impl CellSimulation {
             )
             .map(|mut ubo| unsafe {
                 let mut x = CSUniformEvalRule {
-                    live_n: [0u32; 32],
-                    birth_n: [0u32; 32],
+                    live_neighbours: [0u32; 32],
+                    birth_neighbours: [0u32; 32],
                     live_count: self.eval_rules[self.params.rule].survival.len() as u32,
                     birth_count: self.eval_rules[self.params.rule].birth.len() as u32,
                     states: self.eval_rules[self.params.rule].states,
@@ -835,11 +893,11 @@ impl CellSimulation {
                 };
 
                 for i in 0..self.eval_rules[self.params.rule].survival.len() {
-                    x.live_n[i] = self.eval_rules[self.params.rule].survival[i];
+                    x.live_neighbours[i] = self.eval_rules[self.params.rule].survival[i];
                 }
 
                 for i in 0..self.eval_rules[self.params.rule].birth.len() {
-                    x.birth_n[i] = self.eval_rules[self.params.rule].birth[i];
+                    x.birth_neighbours[i] = self.eval_rules[self.params.rule].birth[i];
                 }
 
                 *(ubo.as_mut_ptr::<CSUniformEvalRule>()) = x;
@@ -879,7 +937,7 @@ impl CellSimulation {
                     *self.render_state.draw_indirect_buffer,
                     *self.render_state.instances_current,
                     *self.render_state.instances_previous,
-                    *self.render_state.instances_live,
+                    *self.render_state.ssbo_packed_cells,
                 ]
                 .as_ptr(),
             );
@@ -941,6 +999,39 @@ impl CellSimulation {
                 }
 
                 ui.text_wrapped(self.eval_rules[self.params.rule].detailed_description());
+                ui.separator();
+
+                ui.text_colored([0f32, 1f32, 0f32, 1f32], "\u{e22e} initialization");
+
+                let mut regen_sim = false;
+                let cluster_types = [
+                    ("\u{f01a7} Cube", RandomClusterType::Cube),
+                    ("\u{f1954} Sphere", RandomClusterType::Sphere),
+                ];
+                cluster_types.iter().for_each(|(btn_name, btn_val)| {
+                    if ui.radio_button_bool(btn_name, *btn_val == self.params.cluster.cluster_type)
+                    {
+                        self.params.cluster.cluster_type = *btn_val;
+                        regen_sim = true;
+                    }
+                });
+
+                regen_sim |= ui.slider(
+                    "\u{f1b3} cluster size",
+                    InitialClusterGenOptions::MIN_CLUSTER_SIZE,
+                    self.params.world_size,
+                    &mut self.params.cluster.cluster_size,
+                );
+
+                regen_sim |= ui.checkbox(
+                    "\u{f0d49} sample each axis independently",
+                    &mut self.params.cluster.independent_axis,
+                );
+
+                if regen_sim {
+                    self.reset_grid();
+                }
+
                 ui.separator();
 
                 let mut update_freq = self.params.update_freq.as_millis() as u32;
@@ -1042,49 +1133,112 @@ impl CellSimulation {
     }
 }
 
-fn generate_grid(tiles: usize) -> Vec<CellStateGPU> {
-    use rand::prelude::*;
-    let mut rng = rand::thread_rng();
+struct RandomCoordsGenerator {
+    dist_x: rand::distributions::Uniform<usize>,
+    dist_y: rand::distributions::Uniform<usize>,
+    dist_z: rand::distributions::Uniform<usize>,
+    independent_axis: bool,
+}
 
-    let mut grid_current = Vec::with_capacity(tiles * tiles * tiles);
-    for z in 0..tiles {
-        for y in 0..tiles {
-            for x in 0..tiles {
-                grid_current.push(CellStateGPU {
-                    state: 0,
-                    center: glm::Vec3::new(
-                        x as f32 - (tiles / 2) as f32 + 0.5f32,
-                        y as f32 - (tiles / 2) as f32 + 0.5f32,
-                        z as f32 - (tiles / 2) as f32 + 0.5f32,
-                    ),
-                });
-            }
+impl RandomCoordsGenerator {
+    fn new(range: std::ops::RangeInclusive<usize>) -> Self {
+        let dist = rand::distributions::Uniform::new_inclusive(range.start(), range.end());
+        Self {
+            dist_x: dist.clone(),
+            dist_y: dist.clone(),
+            dist_z: dist.clone(),
+            independent_axis: false,
         }
     }
 
-    let init_cluster_size: usize = tiles as usize / 8;
+    fn new_independent(
+        x: std::ops::RangeInclusive<usize>,
+        y: std::ops::RangeInclusive<usize>,
+        z: std::ops::RangeInclusive<usize>,
+    ) -> Self {
+        use rand::distributions::Uniform;
+        Self {
+            dist_x: Uniform::new_inclusive(x.start(), x.end()),
+            dist_y: Uniform::new_inclusive(y.start(), y.end()),
+            dist_z: Uniform::new_inclusive(z.start(), z.end()),
+            independent_axis: true,
+        }
+    }
+
+    fn sample(&self, rng: &mut dyn rand::RngCore) -> [usize; 3] {
+        if self.independent_axis {
+            [
+                self.dist_x.sample(rng),
+                self.dist_y.sample(rng),
+                self.dist_z.sample(rng),
+            ]
+        } else {
+            [
+                self.dist_x.sample(rng),
+                self.dist_x.sample(rng),
+                self.dist_x.sample(rng),
+            ]
+        }
+    }
+}
+
+fn generate_grid(tiles: usize, opts: &InitialClusterGenOptions) -> Vec<CellStateGPU> {
+    let mut rng = rand::thread_rng();
+
+    let mut grid_current = vec![CellStateGPU { state: 0 }; tiles * tiles * tiles];
+
+    let init_cluster_size: usize = if tiles == opts.cluster_size as usize {
+        opts.cluster_size - 1
+    } else {
+        opts.cluster_size
+    } as usize;
+
     let cluster_center: usize = tiles as usize / 2;
+    let center = glm::Vec3::new(
+        cluster_center as f32,
+        cluster_center as f32,
+        cluster_center as f32,
+    );
 
-    (0..init_cluster_size * init_cluster_size * init_cluster_size).for_each(|_| {
-        let x = rng.gen_range(
-            cluster_center - init_cluster_size / 2..cluster_center + init_cluster_size / 2,
-        );
-        let y = rng.gen_range(
-            cluster_center - init_cluster_size / 2..cluster_center + init_cluster_size / 2,
-        );
-        let z = rng.gen_range(
-            cluster_center - init_cluster_size / 2..cluster_center + init_cluster_size / 2,
-        );
+    let coords_range =
+        cluster_center - init_cluster_size / 2..=cluster_center + init_cluster_size / 2;
 
-        grid_current[z * tiles * tiles + y * tiles + x].state = if rng.gen() { 1 } else { 0 };
-    });
+    let cgen = if opts.independent_axis {
+        RandomCoordsGenerator::new_independent(
+            coords_range.clone(),
+            coords_range.clone(),
+            coords_range.clone(),
+        )
+    } else {
+        RandomCoordsGenerator::new(coords_range)
+    };
+
+    if opts.cluster_type == RandomClusterType::Cube {
+        (0..init_cluster_size * init_cluster_size * init_cluster_size).for_each(|_| {
+            let [x, y, z] = cgen.sample(&mut rng);
+            grid_current[z * tiles * tiles + y * tiles + x].state = 1;
+        });
+    } else {
+        (0..init_cluster_size * init_cluster_size * init_cluster_size).for_each(|_| {
+            let [x, y, z] = cgen.sample(&mut rng);
+
+            let pt = glm::make_vec3(&[x as f32, y as f32, z as f32]);
+            let dist = glm::length(&(pt - center));
+
+            if dist > (init_cluster_size / 2) as f32 {
+                return;
+            }
+
+            grid_current[z * tiles * tiles + y * tiles + x].state = 1;
+        });
+    }
 
     grid_current
 }
 
 fn build_simulation_rules() -> Vec<CellRule> {
     vec![
-        CellRuleBuilder::new("445")
+        CellRuleBuilder::new("4/4/5")
             .add_survival_rule(&[4])
             .add_birth_rule(&[4])
             .set_states(5)
@@ -1226,6 +1380,73 @@ fn build_simulation_rules() -> Vec<CellRule> {
             .add_survival_rule_range(&[1..=3])
             .set_states(5)
             .set_eval_func(NeighbourEval::VonNeumann)
+            .build(),
+        // Expanding Shell (Jason Rampe) 6,7-9,11,13,15-16,18.6-10,13-14,16,18-19,22-25/5/M
+        CellRuleBuilder::new("Expanding shell")
+            .add_birth_rule(&[6, 11, 13, 18])
+            .add_birth_rule_range(&[7..=9, 15..=16])
+            .add_survival_rule(&[16])
+            .add_survival_rule_range(&[6..=10, 13..=14, 18..=19, 22..=25])
+            .set_states(5)
+            .set_eval_func(NeighbourEval::Moore)
+            .build(),
+        // More Structures (Jason Rampe) 7-26/4/4/M
+        CellRuleBuilder::new("More structures")
+            .add_survival_rule_range(&[7..=26])
+            .add_birth_rule(&[4])
+            .set_states(4)
+            .set_eval_func(NeighbourEval::Moore)
+            .build(),
+        // Pulse Waves (Jason Rampe) 3/1-3/10/M
+        CellRuleBuilder::new("Pulse waves")
+            .add_survival_rule(&[3])
+            .add_birth_rule_range(&[1..=3])
+            .set_states(10)
+            .set_eval_func(NeighbourEval::Moore)
+            .build(),
+        // Shells (Jason Rampe) 3,5,7,9,11,15,17,19,21,23-24,26/3,6,8-9,11,14-17,19,24/7/M
+        CellRuleBuilder::new("Shells")
+            .add_survival_rule(&[3, 5, 7, 9, 11, 15, 17, 19, 21, 26])
+            .add_survival_rule_range(&[23..=24])
+            .add_birth_rule(&[3, 6, 11, 19, 24])
+            .add_birth_rule_range(&[8..=9, 14..=17])
+            .set_states(7)
+            .set_eval_func(NeighbourEval::Moore)
+            .build(),
+        // Slow Decay 1 (Jason Rampe) 13-26/10-26/3/M
+        CellRuleBuilder::new("Slow decay #1")
+            .add_survival_rule_range(&[13..=26])
+            .add_birth_rule_range(&[10..=26])
+            .set_states(3)
+            .set_eval_func(NeighbourEval::Moore)
+            .build(),
+        // Stable Structures (Evan Wallace) 13-26/14-19/2/M
+        CellRuleBuilder::new("Stable structures")
+            .add_survival_rule_range(&[13..=26])
+            .add_birth_rule_range(&[14..=19])
+            .set_states(2)
+            .set_eval_func(NeighbourEval::Moore)
+            .build(),
+        // Single Point Replication (Jason Rampe) /1/2/M
+        CellRuleBuilder::new("Single point replication")
+            .add_birth_rule(&[1])
+            .set_states(2)
+            .set_eval_func(NeighbourEval::Moore)
+            .build(),
+        // 3D Brain (Jason Rampe) /4/2/M
+        CellRuleBuilder::new("3D brain")
+            .add_birth_rule(&[4])
+            .set_states(2)
+            .set_eval_func(NeighbourEval::Moore)
+            .build(),
+        // Construction (Jason Rampe) 0-2,4,6-11,13-17,21-26/9-10,16,23-24/2/M
+        CellRuleBuilder::new("Construction #2")
+            .add_survival_rule(&[4])
+            .add_survival_rule_range(&[0..=2, 6..=11, 13..=17, 21..=26])
+            .add_birth_rule(&[16])
+            .add_birth_rule_range(&[9..=10, 23..=24])
+            .set_states(2)
+            .set_eval_func(NeighbourEval::Moore)
             .build(),
     ]
 }
