@@ -22,6 +22,7 @@
 // THE SOFTWARE.
 
 // The GLSL Specification, ch 8.4, Floating-Point Pack and Unpack Functions.
+#![allow(dead_code)]
 
 use nalgebra_glm as glm;
 use std::mem;
